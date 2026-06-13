@@ -1,0 +1,72 @@
+## [Visual Studio / Rider / .NET Core]
+## ==========================================
+
+# 빌드 결과물 (Build outputs)
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bsearch.map
+config.m4
+config.status
+Ankh.no-commit
+*.node
+*.pdb
+*.iobj
+*.ipdb
+
+# .NET Core / .NET 5+ 관련 빌드 폴더
+[Bb]in/
+[Oo]bj/
+generated/
+
+# MSBuild 및 복원 관련 임시 파일
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Rosetta 2 백업 파일
+*.moved-aside
+
+# 누겟 패키지 (NuGet Packages)
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Visual Studio 캐시 및 작업 파일
+.vs/
+Generated\ Files/
+_ReSharper*/
+*.[Cc]aches
+[Cc]ache/
+
+# Rider 및 JetBrains IDE 관련
+.idea/
+*.sln.iml
+
+# 게시(Publish) 관련 임시 폴더
+*.deploy.cmd
+*.SourceManifest.xml
+*.Parameters.xml
+*.pubxml
+*.pubxml.user
+
+# 로컬 환경 설정 및 비밀 데이터 (Secrets)
+appsettings.Development.json
+appsettings.Local.json
+*.secrets.json
+.env
+
+# 운영체제 생성 파일
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store

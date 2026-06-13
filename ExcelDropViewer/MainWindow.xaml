@@ -1,0 +1,101 @@
+﻿<Window x:Class="ExcelDropViewer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+        mc:Ignorable="d"
+        Title="Excel 드롭 뷰어"
+        WindowState="Maximized"
+        Background="#F5F6F8">
+    <Window.Resources>
+        <Style x:Key="WrappingCellTextStyle" TargetType="TextBlock">
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="TextTrimming" Value="None" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style x:Key="WrappingDataGridCellStyle" TargetType="DataGridCell">
+            <Setter Property="VerticalContentAlignment" Value="Top" />
+            <Setter Property="Padding" Value="8,6" />
+        </Style>
+        <Style x:Key="ZoneDataGridStyle" TargetType="DataGrid">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="Margin" Value="12" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="AutoGenerateColumns" Value="False" />
+            <Setter Property="CanUserAddRows" Value="False" />
+            <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="RowHeight" Value="{x:Static sys:Double.NaN}" />
+            <Setter Property="CellStyle" Value="{StaticResource WrappingDataGridCellStyle}" />
+            <Setter Property="EnableRowVirtualization" Value="False" />
+            <Setter Property="EnableColumnVirtualization" Value="False" />
+            <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+            <Setter Property="GridLinesVisibility" Value="Horizontal" />
+            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="AlternatingRowBackground" Value="#ECEEF2" />
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderBrush" Value="#D1D5DB" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="RowBackground" Value="White" />
+            <Setter Property="SelectionMode" Value="Extended" />
+            <Setter Property="SelectionUnit" Value="Cell" />
+        </Style>
+        <Style x:Key="ZoneDropHintStyle" TargetType="TextBlock">
+            <Setter Property="Text" Value="엑셀 파일을 여기로 드래그 앤 드롭하세요." />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="Foreground" Value="#6B7280" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="16" />
+        </Style>
+        <Style x:Key="DropZoneBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="#FAFBFC" />
+            <Setter Property="BorderBrush" Value="#C5CAD3" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Margin" Value="4" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="12" Background="#F5F6F8">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MinWidth="240" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" MinWidth="240" />
+        </Grid.ColumnDefinitions>
+
+        <Border x:Name="LeftZone"
+                Grid.Column="0"
+                Style="{StaticResource DropZoneBorderStyle}"
+                AllowDrop="True"
+                DragOver="LeftZone_DragOver"
+                Drop="LeftZone_Drop">
+            <Grid>
+                <TextBlock x:Name="LeftDropHint" Style="{StaticResource ZoneDropHintStyle}" />
+                <DataGrid x:Name="LeftExcelGrid" Style="{StaticResource ZoneDataGridStyle}" />
+            </Grid>
+        </Border>
+
+        <GridSplitter Grid.Column="1"
+                      Width="6"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Stretch"
+                      Background="#D1D5DB"
+                      ShowsPreview="True" />
+
+        <Border x:Name="RightZone"
+                Grid.Column="2"
+                Style="{StaticResource DropZoneBorderStyle}"
+                AllowDrop="True"
+                DragOver="RightZone_DragOver"
+                Drop="RightZone_Drop">
+            <Grid>
+                <TextBlock x:Name="RightDropHint" Style="{StaticResource ZoneDropHintStyle}" />
+                <DataGrid x:Name="RightExcelGrid" Style="{StaticResource ZoneDataGridStyle}" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
