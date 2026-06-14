@@ -9,6 +9,58 @@
         WindowState="Maximized"
         Background="#F5F6F8">
     <Window.Resources>
+        <Style x:Key="ExcelColumnHeaderStyle" TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#E8EAED" />
+            <Setter Property="Foreground" Value="#374151" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="BorderBrush" Value="#C5CAD3" />
+            <Setter Property="BorderThickness" Value="0,0,1,1" />
+            <Setter Property="SeparatorBrush" Value="#9CA3AF" />
+            <Setter Property="SeparatorVisibility" Value="Visible" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridColumnHeader">
+                        <Grid SnapsToDevicePixels="True">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                                  RecognizesAccessKey="True"
+                                                  SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                            </Border>
+                            <Thumb x:Name="PART_LeftHeaderGripper"
+                                   Width="8"
+                                   HorizontalAlignment="Left"
+                                   Background="Transparent"
+                                   Cursor="SizeWE" />
+                            <Thumb x:Name="PART_RightHeaderGripper"
+                                   Width="8"
+                                   HorizontalAlignment="Right"
+                                   Background="Transparent"
+                                   Cursor="SizeWE" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ExcelRowHeaderStyle" TargetType="DataGridRowHeader">
+            <Setter Property="Background" Value="#E8EAED" />
+            <Setter Property="Foreground" Value="#374151" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="BorderBrush" Value="#C5CAD3" />
+            <Setter Property="BorderThickness" Value="0,0,1,0" />
+            <Setter Property="ClipToBounds" Value="True" />
+        </Style>
         <Style x:Key="WrappingCellTextStyle" TargetType="TextBlock">
             <Setter Property="TextWrapping" Value="Wrap" />
             <Setter Property="TextTrimming" Value="None" />
@@ -25,14 +77,23 @@
             <Setter Property="AutoGenerateColumns" Value="False" />
             <Setter Property="CanUserAddRows" Value="False" />
             <Setter Property="CanUserDeleteRows" Value="False" />
+            <Setter Property="CanUserSortColumns" Value="False" />
+            <Setter Property="CanUserReorderColumns" Value="False" />
+            <Setter Property="CanUserResizeColumns" Value="True" />
+            <Setter Property="CanUserResizeRows" Value="False" />
             <Setter Property="RowHeight" Value="{x:Static sys:Double.NaN}" />
             <Setter Property="CellStyle" Value="{StaticResource WrappingDataGridCellStyle}" />
-            <Setter Property="EnableRowVirtualization" Value="False" />
-            <Setter Property="EnableColumnVirtualization" Value="False" />
+            <Setter Property="EnableRowVirtualization" Value="True" />
+            <Setter Property="EnableColumnVirtualization" Value="True" />
+            <Setter Property="ScrollViewer.CanContentScroll" Value="False" />
+            <Setter Property="ScrollViewer.IsDeferredScrollingEnabled" Value="True" />
             <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
-            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
-            <Setter Property="GridLinesVisibility" Value="Horizontal" />
-            <Setter Property="HeadersVisibility" Value="Column" />
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Standard" />
+            <Setter Property="GridLinesVisibility" Value="All" />
+            <Setter Property="HeadersVisibility" Value="All" />
+            <Setter Property="RowHeaderWidth" Value="44" />
+            <Setter Property="ColumnHeaderStyle" Value="{StaticResource ExcelColumnHeaderStyle}" />
+            <Setter Property="RowHeaderStyle" Value="{StaticResource ExcelRowHeaderStyle}" />
             <Setter Property="AlternatingRowBackground" Value="#ECEEF2" />
             <Setter Property="Background" Value="White" />
             <Setter Property="BorderBrush" Value="#D1D5DB" />
@@ -75,7 +136,12 @@
                 Drop="LeftZone_Drop">
             <Grid>
                 <TextBlock x:Name="LeftDropHint" Style="{StaticResource ZoneDropHintStyle}" />
-                <DataGrid x:Name="LeftExcelGrid" Style="{StaticResource ZoneDataGridStyle}" />
+                <DataGrid x:Name="LeftExcelGrid"
+                          Style="{StaticResource ZoneDataGridStyle}"
+                          ScrollViewer.ScrollChanged="ExcelDataGrid_ScrollChanged"
+                          PreviewMouseLeftButtonUp="ExcelDataGrid_PreviewMouseLeftButtonUp"
+                          LoadingRow="ExcelGrid_LoadingRow"
+                          PreviewMouseWheel="ExcelGrid_PreviewMouseWheel" />
             </Grid>
         </Border>
 
@@ -94,7 +160,12 @@
                 Drop="RightZone_Drop">
             <Grid>
                 <TextBlock x:Name="RightDropHint" Style="{StaticResource ZoneDropHintStyle}" />
-                <DataGrid x:Name="RightExcelGrid" Style="{StaticResource ZoneDataGridStyle}" />
+                <DataGrid x:Name="RightExcelGrid"
+                          Style="{StaticResource ZoneDataGridStyle}"
+                          ScrollViewer.ScrollChanged="ExcelDataGrid_ScrollChanged"
+                          PreviewMouseLeftButtonUp="ExcelDataGrid_PreviewMouseLeftButtonUp"
+                          LoadingRow="ExcelGrid_LoadingRow"
+                          PreviewMouseWheel="ExcelGrid_PreviewMouseWheel" />
             </Grid>
         </Border>
     </Grid>

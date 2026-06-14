@@ -1,6 +1,8 @@
 # ExcelDropViewer
 
-WPF 앱으로 엑셀 파일(.xlsx, .xls, .xlsm)을 드래그 앤 드롭하면 첫 번째 시트 데이터를 DataGrid에 표시합니다.
+WPF 앱으로 엑셀 파일(.xlsx, .xls)을 좌·우 영역에 드래그 앤 드롭하면 첫 번째 시트 데이터를 DataGrid에 표시합니다.
+
+**요구 사항:** .NET 10 SDK
 
 ## 실행
 

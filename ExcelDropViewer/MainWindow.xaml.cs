@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -10,22 +11,67 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
 using ExcelDataReader;
 
 namespace ExcelDropViewer
 {
     public partial class MainWindow : Window
     {
-        private const string DisplayHeaderKey = "DisplayHeader";
         private const string MaxTextLengthKey = "MaxTextLength";
         private const int WrapCharacterThreshold = 40;
         private const double WrapColumnWidth = 300;
         private const double WrapColumnMaxWidth = 350;
+        private const double MinColumnWidth = 50;
 
         public MainWindow()
         {
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             InitializeComponent();
+        }
+
+        private void ExcelGrid_LoadingRow(object sender, DataGridRowEventArgs e)
+        {
+            e.Row.Header = (e.Row.GetIndex() + 1).ToString(CultureInfo.InvariantCulture);
+        }
+
+        private void ExcelGrid_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (Keyboard.Modifiers != ModifierKeys.Shift || sender is not DataGrid grid)
+            {
+                return;
+            }
+
+            var scrollViewer = GetScrollViewer(grid);
+            if (scrollViewer == null)
+            {
+                return;
+            }
+
+            var nextOffset = scrollViewer.HorizontalOffset - e.Delta;
+            scrollViewer.ScrollToHorizontalOffset(Math.Max(0, nextOffset));
+            e.Handled = true;
+        }
+
+        private static ScrollViewer? GetScrollViewer(DependencyObject element)
+        {
+            if (element is ScrollViewer scrollViewer)
+            {
+                return scrollViewer;
+            }
+
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
+            {
+                var child = VisualTreeHelper.GetChild(element, i);
+                var result = GetScrollViewer(child);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            return null;
         }
 
         private void LeftZone_DragOver(object sender, DragEventArgs e)
@@ -115,7 +161,7 @@ namespace ExcelDropViewer
             }
         }
 
-        private static string TryGetDroppedExcelPath(DragEventArgs e, out bool hasFileDrop)
+        private static string? TryGetDroppedExcelPath(DragEventArgs e, out bool hasFileDrop)
         {
             hasFileDrop = e.Data.GetDataPresent(DataFormats.FileDrop);
             if (!hasFileDrop)
@@ -158,7 +204,7 @@ namespace ExcelDropViewer
                 UseColumnDataType = false,
                 ConfigureDataTable = _ => new ExcelDataTableConfiguration
                 {
-                    UseHeaderRow = true
+                    UseHeaderRow = false
                 }
             });
 
@@ -187,16 +233,8 @@ namespace ExcelDropViewer
 
             for (var j = 0; j < includedSourceIndexes.Count; j++)
             {
-                var sourceIndex = includedSourceIndexes[j];
-                var header = source.Columns[sourceIndex].ColumnName;
-                if (string.IsNullOrWhiteSpace(header))
-                {
-                    header = $"열 {j + 1}";
-                }
-
                 var column = table.Columns.Add($"F{j}", typeof(string));
-                column.ExtendedProperties[DisplayHeaderKey] = header;
-                column.ExtendedProperties[MaxTextLengthKey] = header.Length;
+                column.ExtendedProperties[MaxTextLengthKey] = 0;
             }
 
             foreach (DataRow row in source.Rows)
@@ -208,7 +246,9 @@ namespace ExcelDropViewer
                     newRow[j] = text;
 
                     var column = table.Columns[j];
-                    var maxLength = (int)column.ExtendedProperties[MaxTextLengthKey];
+                    var maxLength = column.ExtendedProperties[MaxTextLengthKey] is int currentMax
+                        ? currentMax
+                        : 0;
                     if (text.Length > maxLength)
                     {
                         column.ExtendedProperties[MaxTextLengthKey] = text.Length;
@@ -262,49 +302,292 @@ namespace ExcelDropViewer
         }
 
         /// <summary>
-        /// 40자 초과 열은 줄바꿈 고정 너비, 이하는 SizeToCells. WrappingCellTextStyle 적용.
+        /// 40자 초과 열은 줄바꿈 고정 너비, 이하는 계산된 픽셀 너비. TemplateColumn으로 A열 렌더링 안정화.
         /// </summary>
+        private bool _isBindingColumns;
+
         private void BindDataGrid(DataTable table, DataGrid targetGrid)
         {
-            targetGrid.Columns.Clear();
-            targetGrid.AutoGenerateColumns = false;
-
-            var wrappingStyle = (Style)FindResource("WrappingCellTextStyle");
-
-            foreach (DataColumn column in table.Columns)
+            _isBindingColumns = true;
+            try
             {
-                var header = column.ExtendedProperties[DisplayHeaderKey] as string
-                             ?? column.ColumnName;
-                var maxTextLength = column.ExtendedProperties[MaxTextLengthKey] is int length
-                    ? length
-                    : 0;
-                var useWrapWidth = maxTextLength > WrapCharacterThreshold;
+                targetGrid.Columns.Clear();
+                targetGrid.AutoGenerateColumns = false;
+                targetGrid.FrozenColumnCount = 0;
 
-                var gridColumn = new DataGridTextColumn
+                var wrappingStyle = (Style)FindResource("WrappingCellTextStyle");
+
+                for (var columnIndex = 0; columnIndex < table.Columns.Count; columnIndex++)
                 {
-                    Header = header,
-                    Binding = new Binding($"[{column.ColumnName}]")
+                    var column = table.Columns[columnIndex];
+                    var maxTextLength = column.ExtendedProperties[MaxTextLengthKey] is int length
+                        ? length
+                        : 0;
+                    var columnLetter = ToExcelColumnLetter(columnIndex);
+
+                    var gridColumn = new DataGridTemplateColumn
                     {
-                        Mode = BindingMode.OneWay
-                    },
-                    ElementStyle = wrappingStyle
-                };
+                        Header = columnLetter,
+                        CellTemplate = CreateCellTemplate(column.ColumnName, wrappingStyle),
+                        Width = new DataGridLength(EstimateColumnWidth(maxTextLength)),
+                        MinWidth = MinColumnWidth,
+                        CanUserResize = true
+                    };
 
-                if (useWrapWidth)
-                {
-                    gridColumn.Width = new DataGridLength(WrapColumnWidth);
-                    gridColumn.MaxWidth = WrapColumnMaxWidth;
-                }
-                else
-                {
-                    gridColumn.Width = new DataGridLength(1, DataGridLengthUnitType.SizeToCells);
-                    gridColumn.MinWidth = 48;
+                    if (maxTextLength > WrapCharacterThreshold)
+                    {
+                        gridColumn.MaxWidth = WrapColumnMaxWidth;
+                    }
+
+                    targetGrid.Columns.Add(gridColumn);
+                    WireColumnResize(targetGrid, gridColumn);
                 }
 
-                targetGrid.Columns.Add(gridColumn);
+                targetGrid.ItemsSource = table.DefaultView;
+            }
+            finally
+            {
+                _isBindingColumns = false;
+            }
+        }
+
+        private void WireColumnResize(DataGrid grid, DataGridColumn column)
+        {
+            var descriptor = DependencyPropertyDescriptor.FromProperty(
+                DataGridColumn.WidthProperty,
+                typeof(DataGridColumn));
+
+            descriptor?.AddValueChanged(column, (_, _) => ScheduleColumnResizeRefresh(grid));
+        }
+
+        /// <summary>
+        /// 드래그 중에는 타이머만 재시작하고, 무거운 갱신은 하지 않습니다.
+        /// </summary>
+        private void ScheduleColumnResizeRefresh(DataGrid grid)
+        {
+            if (_isBindingColumns)
+            {
+                return;
             }
 
-            targetGrid.ItemsSource = table.DefaultView;
+            if (!_columnResizeTimers.TryGetValue(grid, out var timer))
+            {
+                timer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(200)
+                };
+                timer.Tick += ColumnResizeTimer_Tick;
+                _columnResizeTimers[grid] = timer;
+            }
+
+            timer.Tag = grid;
+            timer.Stop();
+            timer.Start();
+        }
+
+        private void ColumnResizeTimer_Tick(object? sender, EventArgs e)
+        {
+            if (sender is not DispatcherTimer timer || timer.Tag is not DataGrid grid)
+            {
+                return;
+            }
+
+            timer.Stop();
+            CompleteColumnResize(grid);
+        }
+
+        private void ExcelDataGrid_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is not DataGrid grid)
+            {
+                return;
+            }
+
+            if (_columnResizeTimers.TryGetValue(grid, out var timer) && timer.IsEnabled)
+            {
+                timer.Stop();
+                CompleteColumnResize(grid);
+            }
+        }
+
+        private void CompleteColumnResize(DataGrid grid)
+        {
+            EnforceMinColumnWidths(grid);
+
+            var scrollViewer = GetScrollViewer(grid);
+            if (scrollViewer != null)
+            {
+                RefreshGridLayout(grid, scrollViewer, fullRepair: false);
+            }
+        }
+
+        private void EnforceMinColumnWidths(DataGrid grid)
+        {
+            foreach (var column in grid.Columns)
+            {
+                if (column.ActualWidth < MinColumnWidth)
+                {
+                    column.Width = new DataGridLength(MinColumnWidth);
+                }
+            }
+        }
+
+        private static DataTemplate CreateCellTemplate(string columnName, Style textStyle)
+        {
+            var template = new DataTemplate();
+            var factory = new FrameworkElementFactory(typeof(TextBlock));
+            factory.SetBinding(TextBlock.TextProperty, new Binding($"[{columnName}]")
+            {
+                Mode = BindingMode.OneWay
+            });
+            factory.SetValue(TextBlock.StyleProperty, textStyle);
+            factory.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
+            factory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Top);
+            template.VisualTree = factory;
+            return template;
+        }
+
+        private static double EstimateColumnWidth(int maxTextLength)
+        {
+            if (maxTextLength > WrapCharacterThreshold)
+            {
+                return WrapColumnWidth;
+            }
+
+            return Math.Clamp(maxTextLength * 7.5 + 28, MinColumnWidth, 240);
+        }
+
+        private readonly Dictionary<DataGrid, DispatcherTimer> _horizontalScrollTimers = new();
+        private readonly Dictionary<DataGrid, DispatcherTimer> _columnResizeTimers = new();
+
+        private void ExcelDataGrid_ScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            if (Math.Abs(e.HorizontalChange) < 0.01)
+            {
+                return;
+            }
+
+            ScrollViewer? scrollViewer = sender as ScrollViewer;
+            if (scrollViewer == null && sender is DataGrid dataGrid)
+            {
+                scrollViewer = GetScrollViewer(dataGrid);
+            }
+
+            if (scrollViewer == null)
+            {
+                return;
+            }
+
+            var grid = sender as DataGrid ?? FindParent<DataGrid>(scrollViewer);
+            if (grid == null)
+            {
+                return;
+            }
+
+            if (!_horizontalScrollTimers.TryGetValue(grid, out var timer))
+            {
+                timer = new DispatcherTimer
+                {
+                    Interval = TimeSpan.FromMilliseconds(120)
+                };
+                timer.Tick += HorizontalScrollTimer_Tick;
+                _horizontalScrollTimers[grid] = timer;
+            }
+
+            timer.Tag = scrollViewer;
+            timer.Stop();
+            timer.Start();
+        }
+
+        private void HorizontalScrollTimer_Tick(object? sender, EventArgs e)
+        {
+            if (sender is not DispatcherTimer timer)
+            {
+                return;
+            }
+
+            timer.Stop();
+
+            if (timer.Tag is not ScrollViewer scrollViewer)
+            {
+                return;
+            }
+
+            var grid = FindParent<DataGrid>(scrollViewer);
+            if (grid == null)
+            {
+                return;
+            }
+
+            RefreshGridLayout(grid, scrollViewer, fullRepair: true);
+        }
+
+        /// <param name="fullRepair">true: 가로 스크롤 후 셀 깨짐 복구용 전체 갱신. false: 열 리사이즈 완료 후 최소 레이아웃 갱신.</param>
+        private static void RefreshGridLayout(DataGrid grid, ScrollViewer scrollViewer, bool fullRepair)
+        {
+            var horizontalOffset = scrollViewer.HorizontalOffset;
+            var verticalOffset = scrollViewer.VerticalOffset;
+
+            if (fullRepair)
+            {
+                Keyboard.ClearFocus();
+                grid.UnselectAll();
+
+                for (var i = 0; i < grid.Items.Count; i++)
+                {
+                    if (grid.ItemContainerGenerator.ContainerFromIndex(i) is not DataGridRow row)
+                    {
+                        continue;
+                    }
+
+                    row.Header = (i + 1).ToString(CultureInfo.InvariantCulture);
+                    row.InvalidateArrange();
+                    row.InvalidateVisual();
+                }
+
+                if (System.Windows.Data.CollectionViewSource.GetDefaultView(grid.ItemsSource) is ICollectionView view)
+                {
+                    view.Refresh();
+                }
+            }
+
+            grid.InvalidateMeasure();
+            grid.InvalidateArrange();
+            grid.UpdateLayout();
+
+            scrollViewer.ScrollToHorizontalOffset(horizontalOffset);
+            scrollViewer.ScrollToVerticalOffset(verticalOffset);
+        }
+
+        private static T? FindParent<T>(DependencyObject child) where T : DependencyObject
+        {
+            var current = VisualTreeHelper.GetParent(child);
+            while (current != null)
+            {
+                if (current is T match)
+                {
+                    return match;
+                }
+
+                current = VisualTreeHelper.GetParent(current);
+            }
+
+            return null;
+        }
+
+        private static string ToExcelColumnLetter(int columnIndex)
+        {
+            var dividend = columnIndex + 1;
+            var columnName = string.Empty;
+
+            while (dividend > 0)
+            {
+                var modulo = (dividend - 1) % 26;
+                columnName = Convert.ToChar('A' + modulo) + columnName;
+                dividend = (dividend - modulo) / 26;
+            }
+
+            return columnName;
         }
 
         private static string FormatCellValue(object value)
