@@ -21,6 +21,7 @@ namespace ExcelDropViewer
     public partial class MainWindow : Window
     {
         private const string MaxTextLengthKey = "MaxTextLength";
+        private const string IsResultColumnKey = "IsResultColumn";
         private const int WrapCharacterThreshold = 40;
         private const double WrapColumnWidth = 300;
         private const double MinColumnWidth = 50;
@@ -29,12 +30,14 @@ namespace ExcelDropViewer
         private DataGrid? _activeExcelGrid;
         private readonly Dictionary<DataGrid, int> _lastSelectedRowIndexes = new();
         private readonly Dictionary<DataGrid, string> _sourceFilePaths = new();
+        private UiLogWriter? _logWriter;
 
         public MainWindow()
         {
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             InitializeComponent();
             _activeExcelGrid = LeftExcelGrid;
+            _logWriter = new UiLogWriter(LogTextBox, LogScrollViewer);
         }
 
         private void ExcelGrid_GotFocus(object sender, RoutedEventArgs e)
@@ -70,6 +73,8 @@ namespace ExcelDropViewer
 
             try
             {
+                LogStart("BOM one row");
+
                 var sourceTable = GetBoundTable(targetGrid);
                 if (sourceTable == null || sourceTable.Rows.Count == 0)
                 {
@@ -78,6 +83,7 @@ namespace ExcelDropViewer
                         "알림",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);
+                    LogEnd("BOM one row");
                     return;
                 }
 
@@ -89,21 +95,125 @@ namespace ExcelDropViewer
                         "알림",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);
+                    LogEnd("BOM one row");
                     return;
                 }
 
-                var mergedTable = BomOneRowTransformer.TransformWithSelectedHeaderRow(sourceTable, headerRowIndex);
+                var totalRows = Math.Max(0, sourceTable.Rows.Count - (headerRowIndex + 3));
+                LogProgress("BOM one row", $"병합 대상 행 {totalRows}건 처리 시작.");
+
+                var mergedTable = BomOneRowTransformer.TransformWithSelectedHeaderRow(
+                    sourceTable,
+                    headerRowIndex,
+                    (current, total) => ReportThrottledRowProgress("BOM one row", current, total, "병합 처리"));
+
                 BindDataGrid(mergedTable, targetGrid);
                 RefreshDataGridPerfect(targetGrid);
+                LogProgress("BOM one row", $"결과 행 {mergedTable.Rows.Count}건 생성 완료.");
+                LogEnd("BOM one row");
             }
             catch (Exception ex)
             {
+                LogProgress("BOM one row", $"오류: {ex.Message}");
+                LogEnd("BOM one row");
                 MessageBox.Show(
                     $"BOM one row 변환 중 오류가 발생했습니다.\n{ex.Message}",
                     "오류",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
+        }
+
+        private void CompareBomMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryResolveCompareGrids(out var primaryGrid, out var secondaryGrid, out var errorMessage))
+            {
+                MessageBox.Show(
+                    errorMessage,
+                    "알림",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                LogStart("Compare BOM");
+
+                var primaryTable = GetBoundTable(primaryGrid);
+                var secondaryTable = GetBoundTable(secondaryGrid);
+                if (primaryTable == null || secondaryTable == null)
+                {
+                    MessageBox.Show(
+                        "비교할 데이터를 읽을 수 없습니다.",
+                        "알림",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    LogEnd("Compare BOM");
+                    return;
+                }
+
+                var compareRowCount = Math.Max(0, primaryTable.Rows.Count - 1);
+                LogProgress("Compare BOM", $"비교 대상 행 {compareRowCount}건, 참조 데이터(사양·품번 검색) 행 {Math.Max(0, secondaryTable.Rows.Count - 1)}건.");
+
+                var comparedTable = BomCompareTransformer.CompareBom(
+                    primaryTable,
+                    secondaryTable,
+                    (current, total) => ReportThrottledRowProgress("Compare BOM", current, total, "행 비교"));
+
+                BindDataGrid(comparedTable, primaryGrid);
+                RefreshDataGridPerfect(primaryGrid);
+                LogProgress("Compare BOM", $"비교 완료. 결과 행 {comparedTable.Rows.Count}건, 복사 열: No·품번·사양·제조사·Q'ty, Result(OK/NG) 열 추가.");
+                LogEnd("Compare BOM");
+            }
+            catch (Exception ex)
+            {
+                LogProgress("Compare BOM", $"오류: {ex.Message}");
+                LogEnd("Compare BOM");
+                MessageBox.Show(
+                    $"Compare BOM 처리 중 오류가 발생했습니다.\n{ex.Message}",
+                    "오류",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private bool TryResolveCompareGrids(
+            out DataGrid primaryGrid,
+            out DataGrid secondaryGrid,
+            out string errorMessage)
+        {
+            primaryGrid = ResolveTargetGrid() ?? LeftExcelGrid;
+            secondaryGrid = primaryGrid == LeftExcelGrid ? RightExcelGrid : LeftExcelGrid;
+            errorMessage = string.Empty;
+
+            if (primaryGrid.Visibility != Visibility.Visible || primaryGrid.ItemsSource == null)
+            {
+                errorMessage = "첫 번째(선택된) 영역에 로드된 엑셀 데이터가 없습니다. 비교할 영역을 클릭한 뒤 다시 시도해 주세요.";
+                return false;
+            }
+
+            if (secondaryGrid.Visibility != Visibility.Visible || secondaryGrid.ItemsSource == null)
+            {
+                errorMessage = "반대편 영역에 로드된 엑셀 데이터가 없습니다. 두 영역 모두에 파일을 먼저 로드해 주세요.";
+                return false;
+            }
+
+            var primaryTable = GetBoundTable(primaryGrid);
+            var secondaryTable = GetBoundTable(secondaryGrid);
+            if (primaryTable == null || primaryTable.Rows.Count < 2)
+            {
+                errorMessage = "첫 번째 데이터에 헤더 행을 제외하고 비교할 행이 없습니다.";
+                return false;
+            }
+
+            if (secondaryTable == null || secondaryTable.Rows.Count < 2)
+            {
+                errorMessage = "두 번째 데이터에 헤더 행을 제외하고 비교할 행이 없습니다.";
+                return false;
+            }
+
+            return true;
         }
 
         private void SaveAsMenuItem_Click(object sender, RoutedEventArgs e)
@@ -156,8 +266,13 @@ namespace ExcelDropViewer
 
             try
             {
+                LogStart("Save As");
+                LogProgress("Save As", $"저장 경로: {dialog.FileName}");
+
                 Mouse.OverrideCursor = Cursors.Wait;
                 ExcelXlsxExporter.SaveDataTable(table, dialog.FileName);
+                LogProgress("Save As", $"행 {table.Rows.Count}건, 열 {table.Columns.Count}건 저장 완료.");
+                LogEnd("Save As");
                 MessageBox.Show(
                     $"파일을 저장했습니다.\n{dialog.FileName}",
                     "저장 완료",
@@ -166,6 +281,8 @@ namespace ExcelDropViewer
             }
             catch (Exception ex)
             {
+                LogProgress("Save As", $"오류: {ex.Message}");
+                LogEnd("Save As");
                 MessageBox.Show(
                     $"파일 저장 중 오류가 발생했습니다.\n{ex.Message}",
                     "오류",
@@ -266,6 +383,47 @@ namespace ExcelDropViewer
             }
 
             return rowView.Row.Table.Rows.IndexOf(rowView.Row);
+        }
+
+        private void LogStart(string functionName)
+        {
+            _logWriter?.LogStart(functionName);
+        }
+
+        private void LogEnd(string functionName)
+        {
+            _logWriter?.LogEnd(functionName);
+        }
+
+        private void LogProgress(string functionName, string message)
+        {
+            _logWriter?.LogProgress(functionName, message);
+        }
+
+        private void ReportThrottledRowProgress(string functionName, int current, int total, string action)
+        {
+            if (!ShouldReportProgress(current, total))
+            {
+                return;
+            }
+
+            _logWriter?.LogRowProgress(functionName, current, total, action);
+        }
+
+        private static bool ShouldReportProgress(int current, int total)
+        {
+            if (total <= 0)
+            {
+                return false;
+            }
+
+            if (current == 1 || current == total)
+            {
+                return true;
+            }
+
+            var step = Math.Max(1, total / 20);
+            return current % step == 0;
         }
 
         private bool _isBindingColumns;
@@ -459,14 +617,18 @@ namespace ExcelDropViewer
             try
             {
                 Mouse.OverrideCursor = Cursors.Wait;
+                targetGrid.ItemsSource = null;
 
-                var table = await Task.Run(() => LoadFirstSheet(filePath));
+                var table = await Task.Run(() => ExcelSheetLoader.LoadFirstSheet(filePath)).ConfigureAwait(true);
 
                 BindDataGrid(table, targetGrid);
                 _sourceFilePaths[targetGrid] = filePath;
                 dropHint.Visibility = Visibility.Collapsed;
                 targetGrid.Visibility = Visibility.Visible;
-                RefreshDataGridPerfect(targetGrid);
+
+                await Dispatcher.InvokeAsync(
+                    () => RefreshDataGridPerfect(targetGrid),
+                    DispatcherPriority.ApplicationIdle);
             }
             catch (Exception ex)
             {
@@ -530,118 +692,6 @@ namespace ExcelDropViewer
                    || extension.Equals(".xls", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static DataTable LoadFirstSheet(string filePath)
-        {
-            using var stream = File.Open(
-                filePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite);
-
-            using var reader = ExcelReaderFactory.CreateReader(stream);
-
-            var dataSet = reader.AsDataSet(new ExcelDataSetConfiguration
-            {
-                UseColumnDataType = false,
-                ConfigureDataTable = _ => new ExcelDataTableConfiguration
-                {
-                    UseHeaderRow = false
-                }
-            });
-
-            if (dataSet.Tables.Count == 0)
-            {
-                return new DataTable();
-            }
-
-            return ToGridTable(dataSet.Tables[0]);
-        }
-
-        private static DataTable ToGridTable(DataTable source)
-        {
-            var table = new DataTable();
-            var includedSourceIndexes = new List<int>();
-
-            for (var i = 0; i < source.Columns.Count; i++)
-            {
-                if (!ShouldIncludeColumn(source, i))
-                {
-                    continue;
-                }
-
-                includedSourceIndexes.Add(i);
-            }
-
-            for (var j = 0; j < includedSourceIndexes.Count; j++)
-            {
-                var column = table.Columns.Add($"F{j}", typeof(string));
-                column.ExtendedProperties[MaxTextLengthKey] = 0;
-            }
-
-            foreach (DataRow row in source.Rows)
-            {
-                var newRow = table.NewRow();
-                for (var j = 0; j < includedSourceIndexes.Count; j++)
-                {
-                    var text = FormatCellValue(row[includedSourceIndexes[j]]);
-                    newRow[j] = text;
-
-                    var column = table.Columns[j];
-                    var maxLength = column.ExtendedProperties[MaxTextLengthKey] is int currentMax
-                        ? currentMax
-                        : 0;
-                    if (text.Length > maxLength)
-                    {
-                        column.ExtendedProperties[MaxTextLengthKey] = text.Length;
-                    }
-                }
-
-                table.Rows.Add(newRow);
-            }
-
-            return table;
-        }
-
-        private static bool ShouldIncludeColumn(DataTable source, int columnIndex)
-        {
-            var header = source.Columns[columnIndex].ColumnName;
-            if (!string.IsNullOrWhiteSpace(header) && !IsExcelDefaultColumnName(header))
-            {
-                return true;
-            }
-
-            foreach (DataRow row in source.Rows)
-            {
-                if (!IsCellEmpty(row[columnIndex]))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool IsExcelDefaultColumnName(string name)
-        {
-            if (!name.StartsWith("Column", StringComparison.OrdinalIgnoreCase)
-                || name.Length <= "Column".Length)
-            {
-                return false;
-            }
-
-            return int.TryParse(name.Substring("Column".Length), out _);
-        }
-
-        private static bool IsCellEmpty(object value)
-        {
-            if (value == null || value == DBNull.Value)
-            {
-                return true;
-            }
-
-            return string.IsNullOrWhiteSpace(FormatCellValue(value));
-        }
-
         /// <summary>
         /// 40자 초과 열은 줄바꿈 고정 너비, 이하는 계산된 픽셀 너비. TemplateColumn으로 A열 렌더링 안정화.
         /// </summary>
@@ -650,6 +700,7 @@ namespace ExcelDropViewer
             _isBindingColumns = true;
             try
             {
+                targetGrid.ItemsSource = null;
                 targetGrid.Columns.Clear();
                 targetGrid.AutoGenerateColumns = false;
                 targetGrid.FrozenColumnCount = 0;
@@ -665,10 +716,15 @@ namespace ExcelDropViewer
 
                     var columnWidth = EstimateColumnWidth(maxTextLength);
 
+                    var isResultColumn = column.ExtendedProperties.ContainsKey(IsResultColumnKey)
+                        && column.ExtendedProperties[IsResultColumnKey] is true;
+
                     var gridColumn = new DataGridTemplateColumn
                     {
                         Header = ToExcelColumnLetter(columnIndex),
-                        CellTemplate = CreateCellTemplate(column.ColumnName, wrappingStyle),
+                        CellTemplate = isResultColumn
+                            ? CreateResultCellTemplate(column.ColumnName)
+                            : CreateCellTemplate(column.ColumnName, wrappingStyle),
                         Width = new DataGridLength(columnWidth, DataGridLengthUnitType.Pixel),
                         MinWidth = MinColumnWidth,
                         CanUserResize = true
@@ -782,6 +838,29 @@ namespace ExcelDropViewer
             return template;
         }
 
+        private DataTemplate CreateResultCellTemplate(string columnName)
+        {
+            var converter = (IValueConverter)FindResource("ResultToBackgroundConverter");
+            var template = new DataTemplate();
+            var borderFactory = new FrameworkElementFactory(typeof(Border));
+            borderFactory.SetValue(Border.PaddingProperty, new Thickness(8, 6, 8, 6));
+            borderFactory.SetBinding(Border.BackgroundProperty, new Binding($"[{columnName}]")
+            {
+                Converter = converter,
+                Mode = BindingMode.OneWay
+            });
+
+            var textFactory = new FrameworkElementFactory(typeof(TextBlock));
+            textFactory.SetBinding(TextBlock.TextProperty, new Binding($"[{columnName}]")
+            {
+                Mode = BindingMode.OneWay
+            });
+            textFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+            borderFactory.AppendChild(textFactory);
+            template.VisualTree = borderFactory;
+            return template;
+        }
+
         private static double EstimateColumnWidth(int maxTextLength)
         {
             if (maxTextLength == 0)
@@ -885,53 +964,6 @@ namespace ExcelDropViewer
             }
 
             return columnName;
-        }
-
-        private static string FormatCellValue(object value)
-        {
-            if (value == null || value == DBNull.Value)
-            {
-                return string.Empty;
-            }
-
-            switch (value)
-            {
-                case string s:
-                    return s;
-                case DateTime dt:
-                    return dt.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture);
-                case bool b:
-                    return b ? "TRUE" : "FALSE";
-                case double d:
-                    return FormatNumber(d);
-                case float f:
-                    return FormatNumber(f);
-                case decimal m:
-                    return m.ToString(CultureInfo.CurrentCulture);
-                default:
-                    return Convert.ToString(value, CultureInfo.CurrentCulture) ?? string.Empty;
-            }
-        }
-
-        private static string FormatNumber(double value)
-        {
-            if (double.IsNaN(value) || double.IsInfinity(value))
-            {
-                return string.Empty;
-            }
-
-            if (Math.Abs(value) < double.Epsilon)
-            {
-                return "0";
-            }
-
-            if (value > long.MinValue && value < long.MaxValue
-                && Math.Abs(value - Math.Round(value)) < 1e-9)
-            {
-                return ((long)Math.Round(value)).ToString(CultureInfo.CurrentCulture);
-            }
-
-            return value.ToString("G", CultureInfo.CurrentCulture);
         }
     }
 }

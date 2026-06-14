@@ -28,7 +28,10 @@ namespace ExcelDropViewer
             "부품위치"
         };
 
-        public static DataTable TransformWithSelectedHeaderRow(DataTable source, int headerRowIndex)
+        public static DataTable TransformWithSelectedHeaderRow(
+            DataTable source,
+            int headerRowIndex,
+            Action<int, int>? onProgress = null)
         {
             if (source == null || source.Rows.Count == 0)
             {
@@ -63,9 +66,14 @@ namespace ExcelDropViewer
 
             DataRow? mergedRow = null;
             var dataStartRow = headerRowIndex + 3;
+            var totalRows = Math.Max(0, source.Rows.Count - dataStartRow);
+            var processedRows = 0;
 
             for (var rowIndex = dataStartRow; rowIndex < source.Rows.Count; rowIndex++)
             {
+                processedRows++;
+                onProgress?.Invoke(processedRows, totalRows);
+
                 var sourceRow = source.Rows[rowIndex];
                 var itemValue = GetCellText(sourceRow[itemColumn]);
 
