@@ -84,11 +84,12 @@
             <Setter Property="RowHeight" Value="{x:Static sys:Double.NaN}" />
             <Setter Property="CellStyle" Value="{StaticResource WrappingDataGridCellStyle}" />
             <Setter Property="EnableRowVirtualization" Value="True" />
-            <Setter Property="EnableColumnVirtualization" Value="True" />
+            <Setter Property="EnableColumnVirtualization" Value="False" />
             <Setter Property="ScrollViewer.CanContentScroll" Value="False" />
             <Setter Property="ScrollViewer.IsDeferredScrollingEnabled" Value="True" />
             <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
             <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Standard" />
+            <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
             <Setter Property="GridLinesVisibility" Value="All" />
             <Setter Property="HeadersVisibility" Value="All" />
             <Setter Property="RowHeaderWidth" Value="44" />
