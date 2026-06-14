@@ -121,7 +121,22 @@
         </Style>
     </Window.Resources>
 
-    <Grid Margin="12" Background="#F5F6F8">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Menu Grid.Row="0" Background="White" BorderBrush="#D1D5DB" BorderThickness="0,0,0,1">
+            <MenuItem Header="_File">
+                <MenuItem Header="Save _As..." Click="SaveAsMenuItem_Click" />
+            </MenuItem>
+            <MenuItem Header="Tool">
+                <MenuItem Header="BOM one row" Click="BomOneRowMenuItem_Click" />
+            </MenuItem>
+        </Menu>
+
+        <Grid Grid.Row="1" Margin="12" Background="#F5F6F8">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" MinWidth="240" />
             <ColumnDefinition Width="Auto" />
@@ -138,6 +153,8 @@
                 <TextBlock x:Name="LeftDropHint" Style="{StaticResource ZoneDropHintStyle}" />
                 <DataGrid x:Name="LeftExcelGrid"
                           Style="{StaticResource ZoneDataGridStyle}"
+                          GotFocus="ExcelGrid_GotFocus"
+                          SelectionChanged="ExcelGrid_SelectionChanged"
                           ScrollViewer.ScrollChanged="ExcelDataGrid_ScrollChanged"
                           PreviewMouseLeftButtonUp="ExcelDataGrid_PreviewMouseLeftButtonUp"
                           LoadingRow="ExcelGrid_LoadingRow"
@@ -162,11 +179,14 @@
                 <TextBlock x:Name="RightDropHint" Style="{StaticResource ZoneDropHintStyle}" />
                 <DataGrid x:Name="RightExcelGrid"
                           Style="{StaticResource ZoneDataGridStyle}"
+                          GotFocus="ExcelGrid_GotFocus"
+                          SelectionChanged="ExcelGrid_SelectionChanged"
                           ScrollViewer.ScrollChanged="ExcelDataGrid_ScrollChanged"
                           PreviewMouseLeftButtonUp="ExcelDataGrid_PreviewMouseLeftButtonUp"
                           LoadingRow="ExcelGrid_LoadingRow"
                           PreviewMouseWheel="ExcelGrid_PreviewMouseWheel" />
             </Grid>
         </Border>
+        </Grid>
     </Grid>
 </Window>

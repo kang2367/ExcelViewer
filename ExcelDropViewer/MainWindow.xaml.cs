@@ -14,6 +14,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using ExcelDataReader;
+using Microsoft.Win32;
 
 namespace ExcelDropViewer
 {
@@ -25,10 +26,275 @@ namespace ExcelDropViewer
         private const double WrapColumnMaxWidth = 350;
         private const double MinColumnWidth = 50;
 
+        private DataGrid? _activeExcelGrid;
+        private readonly Dictionary<DataGrid, int> _lastSelectedRowIndexes = new();
+        private readonly Dictionary<DataGrid, string> _sourceFilePaths = new();
+
         public MainWindow()
         {
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             InitializeComponent();
+            _activeExcelGrid = LeftExcelGrid;
+        }
+
+        private void ExcelGrid_GotFocus(object sender, RoutedEventArgs e)
+        {
+            if (sender is DataGrid grid)
+            {
+                _activeExcelGrid = grid;
+            }
+        }
+
+        private void BomOneRowMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var targetGrid = ResolveTargetGrid();
+            if (targetGrid == null)
+            {
+                MessageBox.Show(
+                    "변환할 DataGrid를 선택할 수 없습니다. 좌측 또는 우측 영역을 클릭한 뒤 다시 시도해 주세요.",
+                    "알림",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            if (targetGrid.Visibility != Visibility.Visible || targetGrid.ItemsSource == null)
+            {
+                MessageBox.Show(
+                    "선택한 영역에 로드된 엑셀 데이터가 없습니다.",
+                    "알림",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                var sourceTable = GetBoundTable(targetGrid);
+                if (sourceTable == null || sourceTable.Rows.Count == 0)
+                {
+                    MessageBox.Show(
+                        "변환할 데이터가 없습니다.",
+                        "알림",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return;
+                }
+
+                var headerRowIndex = ResolveHeaderRowIndex(targetGrid);
+                if (headerRowIndex < 0)
+                {
+                    MessageBox.Show(
+                        "헤더로 지정할 행을 먼저 선택해 주세요.",
+                        "알림",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    return;
+                }
+
+                var mergedTable = BomOneRowTransformer.TransformWithSelectedHeaderRow(sourceTable, headerRowIndex);
+                BindDataGrid(mergedTable, targetGrid);
+                RefreshGridAfterDataTransform(targetGrid);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"BOM one row 변환 중 오류가 발생했습니다.\n{ex.Message}",
+                    "오류",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private void SaveAsMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var targetGrid = ResolveTargetGrid();
+            if (targetGrid == null
+                || targetGrid.Visibility != Visibility.Visible
+                || targetGrid.ItemsSource == null)
+            {
+                MessageBox.Show(
+                    "저장할 데이터가 없습니다. 좌측 또는 우측 영역에 엑셀 파일을 먼저 로드해 주세요.",
+                    "알림",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            var table = GetBoundTable(targetGrid);
+            if (table == null || table.Rows.Count == 0)
+            {
+                MessageBox.Show(
+                    "저장할 데이터가 없습니다.",
+                    "알림",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            _sourceFilePaths.TryGetValue(targetGrid, out var sourceFilePath);
+
+            var dialog = new SaveFileDialog
+            {
+                Title = "다른 이름으로 저장",
+                Filter = "Excel 파일 (*.xlsx)|*.xlsx",
+                DefaultExt = ".xlsx",
+                AddExtension = true,
+                FileName = BuildDefaultSaveFileName(sourceFilePath)
+            };
+
+            var sourceDirectory = GetSourceDirectory(sourceFilePath);
+            if (!string.IsNullOrWhiteSpace(sourceDirectory))
+            {
+                dialog.InitialDirectory = sourceDirectory;
+            }
+
+            if (dialog.ShowDialog(this) != true)
+            {
+                return;
+            }
+
+            try
+            {
+                Mouse.OverrideCursor = Cursors.Wait;
+                ExcelXlsxExporter.SaveDataTable(table, dialog.FileName);
+                MessageBox.Show(
+                    $"파일을 저장했습니다.\n{dialog.FileName}",
+                    "저장 완료",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"파일 저장 중 오류가 발생했습니다.\n{ex.Message}",
+                    "오류",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+            }
+        }
+
+        private DataGrid? ResolveTargetGrid()
+        {
+            if (_activeExcelGrid is { Visibility: Visibility.Visible, ItemsSource: not null })
+            {
+                return _activeExcelGrid;
+            }
+
+            if (LeftExcelGrid.Visibility == Visibility.Visible && LeftExcelGrid.ItemsSource != null)
+            {
+                return LeftExcelGrid;
+            }
+
+            if (RightExcelGrid.Visibility == Visibility.Visible && RightExcelGrid.ItemsSource != null)
+            {
+                return RightExcelGrid;
+            }
+
+            return _activeExcelGrid;
+        }
+
+        private static DataTable? GetBoundTable(DataGrid grid)
+        {
+            return grid.ItemsSource switch
+            {
+                DataView dataView => dataView.Table,
+                DataTable dataTable => dataTable,
+                _ => null
+            };
+        }
+
+        private void ExcelGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (sender is not DataGrid grid)
+            {
+                return;
+            }
+
+            var rowIndex = TryGetSelectedRowIndex(grid, out _);
+            if (rowIndex >= 0)
+            {
+                _lastSelectedRowIndexes[grid] = rowIndex;
+            }
+        }
+
+        private int ResolveHeaderRowIndex(DataGrid grid)
+        {
+            var rowIndex = TryGetSelectedRowIndex(grid, out _);
+            if (rowIndex >= 0)
+            {
+                return rowIndex;
+            }
+
+            if (_lastSelectedRowIndexes.TryGetValue(grid, out rowIndex) && rowIndex >= 0)
+            {
+                return rowIndex;
+            }
+
+            return -1;
+        }
+
+        private static int TryGetSelectedRowIndex(DataGrid grid, out DataRowView? rowView)
+        {
+            rowView = null;
+
+            if (grid.ItemsSource is not DataView)
+            {
+                return -1;
+            }
+
+            if (grid.CurrentItem is DataRowView currentRow)
+            {
+                rowView = currentRow;
+            }
+            else if (grid.SelectedItem is DataRowView selectedRow)
+            {
+                rowView = selectedRow;
+            }
+            else if (grid.SelectedCells.Count > 0 && grid.SelectedCells[0].Item is DataRowView cellRow)
+            {
+                rowView = cellRow;
+            }
+
+            if (rowView == null)
+            {
+                return -1;
+            }
+
+            return rowView.Row.Table.Rows.IndexOf(rowView.Row);
+        }
+
+        private void RefreshGridAfterDataTransform(DataGrid grid)
+        {
+            grid.RowHeight = double.NaN;
+            grid.UpdateLayout();
+
+            var scrollViewer = GetScrollViewer(grid);
+            if (scrollViewer != null)
+            {
+                RefreshGridLayout(grid, scrollViewer, fullRepair: true);
+            }
+            else
+            {
+                grid.InvalidateMeasure();
+                grid.InvalidateArrange();
+                grid.UpdateLayout();
+            }
+
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (System.Windows.Data.CollectionViewSource.GetDefaultView(grid.ItemsSource) is ICollectionView view)
+                {
+                    view.Refresh();
+                }
+
+                grid.InvalidateMeasure();
+                grid.UpdateLayout();
+            }, DispatcherPriority.Loaded);
         }
 
         private void ExcelGrid_LoadingRow(object sender, DataGridRowEventArgs e)
@@ -144,6 +410,7 @@ namespace ExcelDropViewer
                 var table = await Task.Run(() => LoadFirstSheet(filePath));
 
                 BindDataGrid(table, targetGrid);
+                _sourceFilePaths[targetGrid] = filePath;
                 dropHint.Visibility = Visibility.Collapsed;
                 targetGrid.Visibility = Visibility.Visible;
             }
@@ -159,6 +426,26 @@ namespace ExcelDropViewer
             {
                 Mouse.OverrideCursor = null;
             }
+        }
+
+        private static string BuildDefaultSaveFileName(string? sourceFilePath)
+        {
+            var baseName = string.IsNullOrWhiteSpace(sourceFilePath)
+                ? "export"
+                : Path.GetFileNameWithoutExtension(sourceFilePath);
+            var dateText = DateTime.Today.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
+            return $"{baseName}_Modify_{dateText}.xlsx";
+        }
+
+        private static string? GetSourceDirectory(string? sourceFilePath)
+        {
+            if (string.IsNullOrWhiteSpace(sourceFilePath))
+            {
+                return null;
+            }
+
+            var directory = Path.GetDirectoryName(sourceFilePath);
+            return string.IsNullOrWhiteSpace(directory) ? null : directory;
         }
 
         private static string? TryGetDroppedExcelPath(DragEventArgs e, out bool hasFileDrop)
@@ -323,11 +610,10 @@ namespace ExcelDropViewer
                     var maxTextLength = column.ExtendedProperties[MaxTextLengthKey] is int length
                         ? length
                         : 0;
-                    var columnLetter = ToExcelColumnLetter(columnIndex);
 
                     var gridColumn = new DataGridTemplateColumn
                     {
-                        Header = columnLetter,
+                        Header = ToExcelColumnLetter(columnIndex),
                         CellTemplate = CreateCellTemplate(column.ColumnName, wrappingStyle),
                         Width = new DataGridLength(EstimateColumnWidth(maxTextLength)),
                         MinWidth = MinColumnWidth,
