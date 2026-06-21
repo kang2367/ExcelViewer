@@ -138,6 +138,7 @@
             <MenuItem Header="Tool">
                 <MenuItem Header="BOM one row" Click="BomOneRowMenuItem_Click" />
                 <MenuItem Header="Compare BOM" Click="CompareBomMenuItem_Click" />
+                <MenuItem Header="Reference check" Click="ReferenceCheckMenuItem_Click" />
             </MenuItem>
         </Menu>
 

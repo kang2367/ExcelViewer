@@ -124,6 +124,72 @@ namespace ExcelDropViewer
             }
         }
 
+        private void ReferenceCheckMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var targetGrid = ResolveTargetGrid();
+            if (targetGrid == null)
+            {
+                MessageBox.Show(
+                    "확인할 DataGrid를 선택할 수 없습니다. 좌측 또는 우측 영역을 클릭한 뒤 다시 시도해 주세요.",
+                    "알림",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            if (targetGrid.Visibility != Visibility.Visible || targetGrid.ItemsSource == null)
+            {
+                MessageBox.Show(
+                    "선택한 영역에 로드된 엑셀 데이터가 없습니다.",
+                    "알림",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                LogStart("Reference check");
+
+                var sourceTable = GetBoundTable(targetGrid);
+                if (sourceTable == null || sourceTable.Rows.Count < 2)
+                {
+                    MessageBox.Show(
+                        "헤더 행을 제외하고 확인할 데이터 행이 없습니다.",
+                        "알림",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    LogEnd("Reference check");
+                    return;
+                }
+
+                var dataRowCount = Math.Max(0, sourceTable.Rows.Count - 1);
+                LogProgress("Reference check", $"Reference 열 연속성 확인 대상 행 {dataRowCount}건.");
+
+                var report = ReferenceCheckTransformer.CheckContinuity(
+                    sourceTable,
+                    (current, total) => ReportThrottledRowProgress("Reference check", current, total, "행 확인"));
+
+                foreach (var line in report.ReportLines)
+                {
+                    LogProgress("Reference check", line);
+                }
+
+                LogEnd("Reference check");
+                ScrollableMessageDialog.Show(this, "Reference check", report.MessageText);
+            }
+            catch (Exception ex)
+            {
+                LogProgress("Reference check", $"오류: {ex.Message}");
+                LogEnd("Reference check");
+                MessageBox.Show(
+                    $"Reference check 처리 중 오류가 발생했습니다.\n{ex.Message}",
+                    "오류",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
         private void CompareBomMenuItem_Click(object sender, RoutedEventArgs e)
         {
             if (!TryResolveCompareGrids(out var primaryGrid, out var secondaryGrid, out var errorMessage))
