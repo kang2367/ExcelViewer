@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data;
-using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -9,62 +8,73 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Threading;
-using ExcelDataReader;
+using System.Windows.Forms.Integration;
 using Microsoft.Win32;
+using unvell.ReoGrid;
+using unvell.ReoGrid.IO;
 
 namespace ExcelDropViewer
 {
     public partial class MainWindow : Window
     {
-        private const string MaxTextLengthKey = "MaxTextLength";
-        private const string IsResultColumnKey = "IsResultColumn";
-        private const int WrapCharacterThreshold = 40;
-        private const double WrapColumnWidth = 300;
-        private const double MinColumnWidth = 50;
-        private const double DefaultColumnWidth = 120;
-
-        private DataGrid? _activeExcelGrid;
-        private readonly Dictionary<DataGrid, int> _lastSelectedRowIndexes = new();
-        private readonly Dictionary<DataGrid, string> _sourceFilePaths = new();
+        private readonly ReoGridControl LeftReoGrid;
+        private readonly ReoGridControl RightReoGrid;
+        private ReoGridControl? _activeReoGrid;
+        private readonly Dictionary<ReoGridControl, int> _lastSelectedRowIndexes = new();
+        private readonly Dictionary<ReoGridControl, string> _sourceFilePaths = new();
+        private readonly HashSet<ReoGridControl> _loadedReoGrids = new();
         private UiLogWriter? _logWriter;
 
         public MainWindow()
         {
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
             InitializeComponent();
-            _activeExcelGrid = LeftExcelGrid;
+            LeftReoGrid = CreateReoGrid(LeftReoGridHost);
+            RightReoGrid = CreateReoGrid(RightReoGridHost);
+            _activeReoGrid = LeftReoGrid;
             _logWriter = new UiLogWriter(LogTextBox, LogScrollViewer);
         }
 
-        private void ExcelGrid_GotFocus(object sender, RoutedEventArgs e)
+        private ReoGridControl CreateReoGrid(WindowsFormsHost host)
         {
-            if (sender is DataGrid grid)
+            var grid = new ReoGridControl
             {
-                _activeExcelGrid = grid;
+                Readonly = true,
+                ShowScrollEndSpacing = true,
+                Dock = System.Windows.Forms.DockStyle.Fill
+            };
+            grid.GotFocus += (_, _) =>
+            {
+                _activeReoGrid = grid;
+                TrackSelectedRow(grid);
+            };
+            host.Child = grid;
+            return grid;
+        }
+
+        private void TrackSelectedRow(ReoGridControl grid)
+        {
+            var rowIndex = ReoGridWorksheetAdapter.TryGetSelectedRowIndex(grid);
+            if (rowIndex >= 0)
+            {
+                _lastSelectedRowIndexes[grid] = rowIndex;
             }
+        }
+
+        private void AttachWorksheetSelectionTracking(ReoGridControl grid)
+        {
+            var sheet = grid.CurrentWorksheet;
+            sheet.SelectionRangeChanged += (_, _) => TrackSelectedRow(grid);
         }
 
         private void BomOneRowMenuItem_Click(object sender, RoutedEventArgs e)
         {
             var targetGrid = ResolveTargetGrid();
-            if (targetGrid == null)
+            if (!TryGetLoadedWorksheet(targetGrid, out var worksheet, out var validationMessage))
             {
                 MessageBox.Show(
-                    "변환할 DataGrid를 선택할 수 없습니다. 좌측 또는 우측 영역을 클릭한 뒤 다시 시도해 주세요.",
-                    "알림",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-                return;
-            }
-
-            if (targetGrid.Visibility != Visibility.Visible || targetGrid.ItemsSource == null)
-            {
-                MessageBox.Show(
-                    "선택한 영역에 로드된 엑셀 데이터가 없습니다.",
+                    validationMessage,
                     "알림",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -75,8 +85,8 @@ namespace ExcelDropViewer
             {
                 LogStart("BOM one row");
 
-                var sourceTable = GetBoundTable(targetGrid);
-                if (sourceTable == null || sourceTable.Rows.Count == 0)
+                var sourceTable = ReoGridWorksheetAdapter.ToDataTable(worksheet);
+                if (sourceTable.Rows.Count == 0)
                 {
                     MessageBox.Show(
                         "변환할 데이터가 없습니다.",
@@ -87,7 +97,7 @@ namespace ExcelDropViewer
                     return;
                 }
 
-                var headerRowIndex = ResolveHeaderRowIndex(targetGrid);
+                var headerRowIndex = ResolveHeaderRowIndex(targetGrid!);
                 if (headerRowIndex < 0)
                 {
                     MessageBox.Show(
@@ -107,8 +117,7 @@ namespace ExcelDropViewer
                     headerRowIndex,
                     (current, total) => ReportThrottledRowProgress("BOM one row", current, total, "병합 처리"));
 
-                BindDataGrid(mergedTable, targetGrid);
-                RefreshDataGridPerfect(targetGrid);
+                ReoGridWorksheetAdapter.ApplyDataTable(worksheet, mergedTable);
                 LogProgress("BOM one row", $"결과 행 {mergedTable.Rows.Count}건 생성 완료.");
                 LogEnd("BOM one row");
             }
@@ -124,23 +133,85 @@ namespace ExcelDropViewer
             }
         }
 
-        private void ReferenceCheckMenuItem_Click(object sender, RoutedEventArgs e)
+        private void MakeBomDbMenuItem_Click(object sender, RoutedEventArgs e)
         {
             var targetGrid = ResolveTargetGrid();
-            if (targetGrid == null)
+            if (!TryGetLoadedWorksheet(targetGrid, out var worksheet, out var validationMessage))
             {
                 MessageBox.Show(
-                    "확인할 DataGrid를 선택할 수 없습니다. 좌측 또는 우측 영역을 클릭한 뒤 다시 시도해 주세요.",
+                    validationMessage,
                     "알림",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
                 return;
             }
 
-            if (targetGrid.Visibility != Visibility.Visible || targetGrid.ItemsSource == null)
+            try
+            {
+                LogStart("Make BOM DB");
+
+                var sourceTable = ReoGridWorksheetAdapter.ToDataTable(worksheet);
+                if (sourceTable.Rows.Count == 0)
+                {
+                    MessageBox.Show(
+                        "저장할 데이터가 없습니다.",
+                        "알림",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    LogEnd("Make BOM DB");
+                    return;
+                }
+
+                var headerRowIndex = ResolveHeaderRowIndex(targetGrid!);
+                var dataRowCount = headerRowIndex >= 0
+                    ? Math.Max(0, sourceTable.Rows.Count - (headerRowIndex + 1))
+                    : Math.Max(0, sourceTable.Rows.Count - 1);
+
+                LogProgress("Make BOM DB", $"DB 저장 경로: {BomDbPaths.GetDatabasePath()}");
+                LogProgress("Make BOM DB", $"BOM DB 적재 대상 행 최대 {dataRowCount}건.");
+
+                Mouse.OverrideCursor = Cursors.Wait;
+                var result = BomDbImporter.Import(
+                    sourceTable,
+                    headerRowIndex,
+                    this,
+                    (current, total) => ReportThrottledRowProgress("Make BOM DB", current, total, "DB 적재"));
+
+                LogProgress("Make BOM DB", $"헤더 행: {result.HeaderRowIndex + 1}행, DB 경로: {result.DatabasePath}");
+                LogProgress(
+                    "Make BOM DB",
+                    $"신규 추가: {result.InsertedCount}건, 업데이트: {result.UpdatedCount}건, 건너뜀: {result.SkippedCount}건{(result.Cancelled ? ", 취소됨(롤백)" : string.Empty)}.");
+                LogEnd("Make BOM DB");
+
+                MessageBox.Show(
+                    result.BuildSummaryMessage(),
+                    "Make BOM DB",
+                    MessageBoxButton.OK,
+                    result.Cancelled ? MessageBoxImage.Warning : MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                LogProgress("Make BOM DB", $"오류: {ex.Message}");
+                LogEnd("Make BOM DB");
+                MessageBox.Show(
+                    $"Make BOM DB 처리 중 오류가 발생했습니다.\n{ex.Message}",
+                    "오류",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+            }
+        }
+
+        private void ReferenceCheckMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var targetGrid = ResolveTargetGrid();
+            if (!TryGetLoadedWorksheet(targetGrid, out var worksheet, out var validationMessage))
             {
                 MessageBox.Show(
-                    "선택한 영역에 로드된 엑셀 데이터가 없습니다.",
+                    validationMessage,
                     "알림",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -151,8 +222,8 @@ namespace ExcelDropViewer
             {
                 LogStart("Reference check");
 
-                var sourceTable = GetBoundTable(targetGrid);
-                if (sourceTable == null || sourceTable.Rows.Count < 2)
+                var sourceTable = ReoGridWorksheetAdapter.ToDataTable(worksheet);
+                if (sourceTable.Rows.Count < 2)
                 {
                     MessageBox.Show(
                         "헤더 행을 제외하고 확인할 데이터 행이 없습니다.",
@@ -206,9 +277,12 @@ namespace ExcelDropViewer
             {
                 LogStart("Compare BOM");
 
-                var primaryTable = GetBoundTable(primaryGrid);
-                var secondaryTable = GetBoundTable(secondaryGrid);
-                if (primaryTable == null || secondaryTable == null)
+                var primaryWorksheet = primaryGrid.CurrentWorksheet;
+                var secondaryWorksheet = secondaryGrid.CurrentWorksheet;
+                var primaryTable = ReoGridWorksheetAdapter.ToDataTable(primaryWorksheet);
+                var secondaryTable = ReoGridWorksheetAdapter.ToDataTable(secondaryWorksheet);
+
+                if (primaryTable.Rows.Count < 2 || secondaryTable.Rows.Count < 2)
                 {
                     MessageBox.Show(
                         "비교할 데이터를 읽을 수 없습니다.",
@@ -227,8 +301,7 @@ namespace ExcelDropViewer
                     secondaryTable,
                     (current, total) => ReportThrottledRowProgress("Compare BOM", current, total, "행 비교"));
 
-                BindDataGrid(comparedTable, primaryGrid);
-                RefreshDataGridPerfect(primaryGrid);
+                ReoGridWorksheetAdapter.ApplyDataTable(primaryWorksheet, comparedTable);
                 LogProgress("Compare BOM", $"비교 완료. 결과 행 {comparedTable.Rows.Count}건, 복사 열: No·품번·사양·제조사·Q'ty, Result(OK/NG) 열 추가.");
                 LogEnd("Compare BOM");
             }
@@ -245,35 +318,35 @@ namespace ExcelDropViewer
         }
 
         private bool TryResolveCompareGrids(
-            out DataGrid primaryGrid,
-            out DataGrid secondaryGrid,
+            out ReoGridControl primaryGrid,
+            out ReoGridControl secondaryGrid,
             out string errorMessage)
         {
-            primaryGrid = ResolveTargetGrid() ?? LeftExcelGrid;
-            secondaryGrid = primaryGrid == LeftExcelGrid ? RightExcelGrid : LeftExcelGrid;
+            primaryGrid = ResolveTargetGrid() ?? LeftReoGrid;
+            secondaryGrid = primaryGrid == LeftReoGrid ? RightReoGrid : LeftReoGrid;
             errorMessage = string.Empty;
 
-            if (primaryGrid.Visibility != Visibility.Visible || primaryGrid.ItemsSource == null)
+            if (!TryGetLoadedWorksheet(primaryGrid, out var primaryWorksheet, out errorMessage))
             {
                 errorMessage = "첫 번째(선택된) 영역에 로드된 엑셀 데이터가 없습니다. 비교할 영역을 클릭한 뒤 다시 시도해 주세요.";
                 return false;
             }
 
-            if (secondaryGrid.Visibility != Visibility.Visible || secondaryGrid.ItemsSource == null)
+            if (!TryGetLoadedWorksheet(secondaryGrid, out var secondaryWorksheet, out _))
             {
                 errorMessage = "반대편 영역에 로드된 엑셀 데이터가 없습니다. 두 영역 모두에 파일을 먼저 로드해 주세요.";
                 return false;
             }
 
-            var primaryTable = GetBoundTable(primaryGrid);
-            var secondaryTable = GetBoundTable(secondaryGrid);
-            if (primaryTable == null || primaryTable.Rows.Count < 2)
+            var primaryTable = ReoGridWorksheetAdapter.ToDataTable(primaryWorksheet);
+            var secondaryTable = ReoGridWorksheetAdapter.ToDataTable(secondaryWorksheet);
+            if (primaryTable.Rows.Count < 2)
             {
                 errorMessage = "첫 번째 데이터에 헤더 행을 제외하고 비교할 행이 없습니다.";
                 return false;
             }
 
-            if (secondaryTable == null || secondaryTable.Rows.Count < 2)
+            if (secondaryTable.Rows.Count < 2)
             {
                 errorMessage = "두 번째 데이터에 헤더 행을 제외하고 비교할 행이 없습니다.";
                 return false;
@@ -285,30 +358,17 @@ namespace ExcelDropViewer
         private void SaveAsMenuItem_Click(object sender, RoutedEventArgs e)
         {
             var targetGrid = ResolveTargetGrid();
-            if (targetGrid == null
-                || targetGrid.Visibility != Visibility.Visible
-                || targetGrid.ItemsSource == null)
+            if (!TryGetLoadedWorksheet(targetGrid, out _, out var validationMessage))
             {
                 MessageBox.Show(
-                    "저장할 데이터가 없습니다. 좌측 또는 우측 영역에 엑셀 파일을 먼저 로드해 주세요.",
+                    validationMessage,
                     "알림",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
                 return;
             }
 
-            var table = GetBoundTable(targetGrid);
-            if (table == null || table.Rows.Count == 0)
-            {
-                MessageBox.Show(
-                    "저장할 데이터가 없습니다.",
-                    "알림",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Information);
-                return;
-            }
-
-            _sourceFilePaths.TryGetValue(targetGrid, out var sourceFilePath);
+            _sourceFilePaths.TryGetValue(targetGrid!, out var sourceFilePath);
 
             var dialog = new SaveFileDialog
             {
@@ -336,8 +396,8 @@ namespace ExcelDropViewer
                 LogProgress("Save As", $"저장 경로: {dialog.FileName}");
 
                 Mouse.OverrideCursor = Cursors.Wait;
-                ExcelXlsxExporter.SaveDataTable(table, dialog.FileName);
-                LogProgress("Save As", $"행 {table.Rows.Count}건, 열 {table.Columns.Count}건 저장 완료.");
+                targetGrid.Save(dialog.FileName, FileFormat.Excel2007);
+                LogProgress("Save As", "ReoGrid 워크시트 저장 완료.");
                 LogEnd("Save As");
                 MessageBox.Show(
                     $"파일을 저장했습니다.\n{dialog.FileName}",
@@ -361,53 +421,59 @@ namespace ExcelDropViewer
             }
         }
 
-        private DataGrid? ResolveTargetGrid()
+        private ReoGridControl? ResolveTargetGrid()
         {
-            if (_activeExcelGrid is { Visibility: Visibility.Visible, ItemsSource: not null })
+            if (_activeReoGrid != null && _loadedReoGrids.Contains(_activeReoGrid))
             {
-                return _activeExcelGrid;
+                return _activeReoGrid;
             }
 
-            if (LeftExcelGrid.Visibility == Visibility.Visible && LeftExcelGrid.ItemsSource != null)
+            if (_loadedReoGrids.Contains(LeftReoGrid))
             {
-                return LeftExcelGrid;
+                return LeftReoGrid;
             }
 
-            if (RightExcelGrid.Visibility == Visibility.Visible && RightExcelGrid.ItemsSource != null)
+            if (_loadedReoGrids.Contains(RightReoGrid))
             {
-                return RightExcelGrid;
+                return RightReoGrid;
             }
 
-            return _activeExcelGrid;
+            return _activeReoGrid;
         }
 
-        private static DataTable? GetBoundTable(DataGrid grid)
+        private bool TryGetLoadedWorksheet(
+            ReoGridControl? grid,
+            out Worksheet worksheet,
+            out string message)
         {
-            return grid.ItemsSource switch
-            {
-                DataView dataView => dataView.Table,
-                DataTable dataTable => dataTable,
-                _ => null
-            };
-        }
+            worksheet = null!;
+            message = string.Empty;
 
-        private void ExcelGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (sender is not DataGrid grid)
+            if (grid == null)
             {
-                return;
+                message = "작업할 영역을 선택할 수 없습니다. 좌측 또는 우측 영역을 클릭한 뒤 다시 시도해 주세요.";
+                return false;
             }
 
-            var rowIndex = TryGetSelectedRowIndex(grid, out _);
-            if (rowIndex >= 0)
+            if (!_loadedReoGrids.Contains(grid))
             {
-                _lastSelectedRowIndexes[grid] = rowIndex;
+                message = "선택한 영역에 로드된 엑셀 데이터가 없습니다.";
+                return false;
             }
+
+            worksheet = grid.CurrentWorksheet;
+            if (!ReoGridWorksheetAdapter.HasWorksheetData(worksheet))
+            {
+                message = "선택한 영역에 로드된 엑셀 데이터가 없습니다.";
+                return false;
+            }
+
+            return true;
         }
 
-        private int ResolveHeaderRowIndex(DataGrid grid)
+        private int ResolveHeaderRowIndex(ReoGridControl grid)
         {
-            var rowIndex = TryGetSelectedRowIndex(grid, out _);
+            var rowIndex = ReoGridWorksheetAdapter.TryGetSelectedRowIndex(grid);
             if (rowIndex >= 0)
             {
                 return rowIndex;
@@ -419,36 +485,6 @@ namespace ExcelDropViewer
             }
 
             return -1;
-        }
-
-        private static int TryGetSelectedRowIndex(DataGrid grid, out DataRowView? rowView)
-        {
-            rowView = null;
-
-            if (grid.ItemsSource is not DataView)
-            {
-                return -1;
-            }
-
-            if (grid.CurrentItem is DataRowView currentRow)
-            {
-                rowView = currentRow;
-            }
-            else if (grid.SelectedItem is DataRowView selectedRow)
-            {
-                rowView = selectedRow;
-            }
-            else if (grid.SelectedCells.Count > 0 && grid.SelectedCells[0].Item is DataRowView cellRow)
-            {
-                rowView = cellRow;
-            }
-
-            if (rowView == null)
-            {
-                return -1;
-            }
-
-            return rowView.Row.Table.Rows.IndexOf(rowView.Row);
         }
 
         private void LogStart(string functionName)
@@ -492,142 +528,17 @@ namespace ExcelDropViewer
             return current % step == 0;
         }
 
-        private bool _isBindingColumns;
-        private bool _isRefreshingGrid;
-
-        private void RefreshDataGridPerfect(DataGrid grid, bool afterHorizontalScroll = false)
-        {
-            if (grid.ItemsSource == null)
-            {
-                return;
-            }
-
-            _isRefreshingGrid = true;
-            try
-            {
-                InvalidateDataGridViewport(grid);
-                grid.UpdateLayout();
-                grid.InvalidateVisual();
-
-                if (afterHorizontalScroll)
-                {
-                    NudgeFirstColumnWidthSafely(grid);
-                    grid.UpdateLayout();
-                    grid.InvalidateVisual();
-                }
-            }
-            finally
-            {
-                _isRefreshingGrid = false;
-            }
-
-            if (afterHorizontalScroll)
-            {
-                return;
-            }
-
-            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
-            {
-                if (System.Windows.Data.CollectionViewSource.GetDefaultView(grid.ItemsSource) is ICollectionView view)
-                {
-                    view.Refresh();
-                }
-
-                InvalidateDataGridViewport(grid);
-                grid.UpdateLayout();
-                grid.InvalidateVisual();
-            }));
-        }
-
-        private static void InvalidateDataGridViewport(DataGrid grid)
-        {
-            grid.InvalidateMeasure();
-            grid.InvalidateArrange();
-            grid.InvalidateVisual();
-
-            var scrollViewer = GetScrollViewer(grid);
-            if (scrollViewer == null)
-            {
-                return;
-            }
-
-            scrollViewer.InvalidateMeasure();
-            scrollViewer.InvalidateArrange();
-            scrollViewer.InvalidateVisual();
-        }
-
-        private static void NudgeFirstColumnWidthSafely(DataGrid grid)
-        {
-            if (grid.Columns.Count == 0)
-            {
-                return;
-            }
-
-            var firstColumn = grid.Columns[0];
-            if (!firstColumn.Width.IsAbsolute)
-            {
-                return;
-            }
-
-            var originalWidth = firstColumn.Width.Value;
-            firstColumn.Width = new DataGridLength(originalWidth + 0.01, DataGridLengthUnitType.Pixel);
-            firstColumn.Width = new DataGridLength(originalWidth, DataGridLengthUnitType.Pixel);
-        }
-
-        private void ExcelGrid_LoadingRow(object sender, DataGridRowEventArgs e)
-        {
-            e.Row.Header = (e.Row.GetIndex() + 1).ToString(CultureInfo.InvariantCulture);
-        }
-
-        private void ExcelGrid_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
-        {
-            if (Keyboard.Modifiers != ModifierKeys.Shift || sender is not DataGrid grid)
-            {
-                return;
-            }
-
-            var scrollViewer = GetScrollViewer(grid);
-            if (scrollViewer == null)
-            {
-                return;
-            }
-
-            var nextOffset = scrollViewer.HorizontalOffset - e.Delta;
-            scrollViewer.ScrollToHorizontalOffset(Math.Max(0, nextOffset));
-            e.Handled = true;
-        }
-
-        private static ScrollViewer? GetScrollViewer(DependencyObject element)
-        {
-            if (element is ScrollViewer scrollViewer)
-            {
-                return scrollViewer;
-            }
-
-            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++)
-            {
-                var child = VisualTreeHelper.GetChild(element, i);
-                var result = GetScrollViewer(child);
-                if (result != null)
-                {
-                    return result;
-                }
-            }
-
-            return null;
-        }
-
-        private void LeftZone_DragOver(object sender, DragEventArgs e)
+        private void LeftZone_DragOver(object sender, System.Windows.DragEventArgs e)
         {
             HandleZoneDragOver(e);
         }
 
-        private void RightZone_DragOver(object sender, DragEventArgs e)
+        private void RightZone_DragOver(object sender, System.Windows.DragEventArgs e)
         {
             HandleZoneDragOver(e);
         }
 
-        private async void LeftZone_Drop(object sender, DragEventArgs e)
+        private async void LeftZone_Drop(object sender, System.Windows.DragEventArgs e)
         {
             var excelPath = TryGetDroppedExcelPath(e, out var hasFileDrop);
             if (excelPath == null)
@@ -640,10 +551,10 @@ namespace ExcelDropViewer
                 return;
             }
 
-            await LoadExcelAsync(excelPath, LeftExcelGrid, LeftDropHint);
+            await LoadExcelAsync(excelPath, LeftReoGrid, LeftDropHint);
         }
 
-        private async void RightZone_Drop(object sender, DragEventArgs e)
+        private async void RightZone_Drop(object sender, System.Windows.DragEventArgs e)
         {
             var excelPath = TryGetDroppedExcelPath(e, out var hasFileDrop);
             if (excelPath == null)
@@ -656,10 +567,10 @@ namespace ExcelDropViewer
                 return;
             }
 
-            await LoadExcelAsync(excelPath, RightExcelGrid, RightDropHint);
+            await LoadExcelAsync(excelPath, RightReoGrid, RightDropHint);
         }
 
-        private static void HandleZoneDragOver(DragEventArgs e)
+        private static void HandleZoneDragOver(System.Windows.DragEventArgs e)
         {
             if (!e.Data.GetDataPresent(DataFormats.FileDrop))
             {
@@ -675,26 +586,24 @@ namespace ExcelDropViewer
             e.Handled = true;
         }
 
-        /// <summary>
-        /// 지정한 영역의 DataGrid에만 데이터를 바인딩합니다. 반대쪽 영역은 변경하지 않습니다.
-        /// </summary>
-        private async Task LoadExcelAsync(string filePath, DataGrid targetGrid, TextBlock dropHint)
+        private async Task LoadExcelAsync(string filePath, ReoGridControl targetGrid, TextBlock dropHint)
         {
+            var host = targetGrid == LeftReoGrid ? LeftReoGridHost : RightReoGridHost;
+
             try
             {
                 Mouse.OverrideCursor = Cursors.Wait;
-                targetGrid.ItemsSource = null;
+                await Task.Yield();
 
-                var table = await Task.Run(() => ExcelSheetLoader.LoadFirstSheet(filePath)).ConfigureAwait(true);
+                targetGrid.Reset();
+                targetGrid.Load(filePath);
+                AttachWorksheetSelectionTracking(targetGrid);
 
-                BindDataGrid(table, targetGrid);
                 _sourceFilePaths[targetGrid] = filePath;
+                _loadedReoGrids.Add(targetGrid);
                 dropHint.Visibility = Visibility.Collapsed;
-                targetGrid.Visibility = Visibility.Visible;
-
-                await Dispatcher.InvokeAsync(
-                    () => RefreshDataGridPerfect(targetGrid),
-                    DispatcherPriority.ApplicationIdle);
+                host.Visibility = Visibility.Visible;
+                _activeReoGrid = targetGrid;
             }
             catch (Exception ex)
             {
@@ -730,7 +639,7 @@ namespace ExcelDropViewer
             return string.IsNullOrWhiteSpace(directory) ? null : directory;
         }
 
-        private static string? TryGetDroppedExcelPath(DragEventArgs e, out bool hasFileDrop)
+        private static string? TryGetDroppedExcelPath(System.Windows.DragEventArgs e, out bool hasFileDrop)
         {
             hasFileDrop = e.Data.GetDataPresent(DataFormats.FileDrop);
             if (!hasFileDrop)
@@ -756,280 +665,6 @@ namespace ExcelDropViewer
             var extension = Path.GetExtension(path);
             return extension.Equals(".xlsx", StringComparison.OrdinalIgnoreCase)
                    || extension.Equals(".xls", StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// 40자 초과 열은 줄바꿈 고정 너비, 이하는 계산된 픽셀 너비. TemplateColumn으로 A열 렌더링 안정화.
-        /// </summary>
-        private void BindDataGrid(DataTable table, DataGrid targetGrid)
-        {
-            _isBindingColumns = true;
-            try
-            {
-                targetGrid.ItemsSource = null;
-                targetGrid.Columns.Clear();
-                targetGrid.AutoGenerateColumns = false;
-                targetGrid.FrozenColumnCount = 0;
-
-                var wrappingStyle = (Style)FindResource("WrappingCellTextStyle");
-
-                for (var columnIndex = 0; columnIndex < table.Columns.Count; columnIndex++)
-                {
-                    var column = table.Columns[columnIndex];
-                    var maxTextLength = column.ExtendedProperties[MaxTextLengthKey] is int length
-                        ? length
-                        : 0;
-
-                    var columnWidth = EstimateColumnWidth(maxTextLength);
-
-                    var isResultColumn = column.ExtendedProperties.ContainsKey(IsResultColumnKey)
-                        && column.ExtendedProperties[IsResultColumnKey] is true;
-
-                    var gridColumn = new DataGridTemplateColumn
-                    {
-                        Header = ToExcelColumnLetter(columnIndex),
-                        CellTemplate = isResultColumn
-                            ? CreateResultCellTemplate(column.ColumnName)
-                            : CreateCellTemplate(column.ColumnName, wrappingStyle),
-                        Width = new DataGridLength(columnWidth, DataGridLengthUnitType.Pixel),
-                        MinWidth = MinColumnWidth,
-                        CanUserResize = true
-                    };
-
-                    if (maxTextLength > WrapCharacterThreshold)
-                    {
-                        gridColumn.Width = new DataGridLength(WrapColumnWidth, DataGridLengthUnitType.Pixel);
-                    }
-
-                    targetGrid.Columns.Add(gridColumn);
-                    WireColumnResize(targetGrid, gridColumn);
-                }
-
-                targetGrid.ItemsSource = table.DefaultView;
-            }
-            finally
-            {
-                _isBindingColumns = false;
-            }
-        }
-
-        private void WireColumnResize(DataGrid grid, DataGridColumn column)
-        {
-            var descriptor = DependencyPropertyDescriptor.FromProperty(
-                DataGridColumn.WidthProperty,
-                typeof(DataGridColumn));
-
-            descriptor?.AddValueChanged(column, (_, _) => ScheduleColumnResizeRefresh(grid));
-        }
-
-        /// <summary>
-        /// 드래그 중에는 타이머만 재시작하고, 무거운 갱신은 하지 않습니다.
-        /// </summary>
-        private void ScheduleColumnResizeRefresh(DataGrid grid)
-        {
-            if (_isBindingColumns || _isRefreshingGrid)
-            {
-                return;
-            }
-
-            if (!_columnResizeTimers.TryGetValue(grid, out var timer))
-            {
-                timer = new DispatcherTimer
-                {
-                    Interval = TimeSpan.FromMilliseconds(200)
-                };
-                timer.Tick += ColumnResizeTimer_Tick;
-                _columnResizeTimers[grid] = timer;
-            }
-
-            timer.Tag = grid;
-            timer.Stop();
-            timer.Start();
-        }
-
-        private void ColumnResizeTimer_Tick(object? sender, EventArgs e)
-        {
-            if (sender is not DispatcherTimer timer || timer.Tag is not DataGrid grid)
-            {
-                return;
-            }
-
-            timer.Stop();
-            CompleteColumnResize(grid);
-        }
-
-        private void ExcelDataGrid_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-        {
-            if (sender is not DataGrid grid)
-            {
-                return;
-            }
-
-            if (_columnResizeTimers.TryGetValue(grid, out var timer) && timer.IsEnabled)
-            {
-                timer.Stop();
-                CompleteColumnResize(grid);
-            }
-        }
-
-        private void CompleteColumnResize(DataGrid grid)
-        {
-            EnforceMinColumnWidths(grid);
-            grid.InvalidateMeasure();
-        }
-
-        private void EnforceMinColumnWidths(DataGrid grid)
-        {
-            foreach (var column in grid.Columns)
-            {
-                if (column.ActualWidth < MinColumnWidth)
-                {
-                    column.Width = new DataGridLength(MinColumnWidth, DataGridLengthUnitType.Pixel);
-                }
-            }
-        }
-
-        private static DataTemplate CreateCellTemplate(string columnName, Style textStyle)
-        {
-            var template = new DataTemplate();
-            var factory = new FrameworkElementFactory(typeof(TextBlock));
-            factory.SetBinding(TextBlock.TextProperty, new Binding($"[{columnName}]")
-            {
-                Mode = BindingMode.OneWay
-            });
-            factory.SetValue(TextBlock.StyleProperty, textStyle);
-            factory.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
-            factory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Top);
-            template.VisualTree = factory;
-            return template;
-        }
-
-        private DataTemplate CreateResultCellTemplate(string columnName)
-        {
-            var converter = (IValueConverter)FindResource("ResultToBackgroundConverter");
-            var template = new DataTemplate();
-            var borderFactory = new FrameworkElementFactory(typeof(Border));
-            borderFactory.SetValue(Border.PaddingProperty, new Thickness(8, 6, 8, 6));
-            borderFactory.SetBinding(Border.BackgroundProperty, new Binding($"[{columnName}]")
-            {
-                Converter = converter,
-                Mode = BindingMode.OneWay
-            });
-
-            var textFactory = new FrameworkElementFactory(typeof(TextBlock));
-            textFactory.SetBinding(TextBlock.TextProperty, new Binding($"[{columnName}]")
-            {
-                Mode = BindingMode.OneWay
-            });
-            textFactory.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-            borderFactory.AppendChild(textFactory);
-            template.VisualTree = borderFactory;
-            return template;
-        }
-
-        private static double EstimateColumnWidth(int maxTextLength)
-        {
-            if (maxTextLength == 0)
-            {
-                return DefaultColumnWidth;
-            }
-
-            if (maxTextLength > WrapCharacterThreshold)
-            {
-                return WrapColumnWidth;
-            }
-
-            return Math.Round(Math.Clamp(maxTextLength * 7.5 + 28, MinColumnWidth, 240));
-        }
-
-        private readonly Dictionary<DataGrid, DispatcherTimer> _columnResizeTimers = new();
-        private readonly Dictionary<DataGrid, DispatcherTimer> _horizontalScrollRefreshTimers = new();
-
-        private void ExcelDataGrid_ScrollChanged(object sender, ScrollChangedEventArgs e)
-        {
-            if (Math.Abs(e.HorizontalChange) < 0.01)
-            {
-                return;
-            }
-
-            ScrollViewer? scrollViewer = sender as ScrollViewer;
-            if (scrollViewer == null && sender is DataGrid dataGrid)
-            {
-                scrollViewer = GetScrollViewer(dataGrid);
-            }
-
-            if (scrollViewer == null)
-            {
-                return;
-            }
-
-            var grid = sender as DataGrid ?? FindParent<DataGrid>(scrollViewer);
-            if (grid == null)
-            {
-                return;
-            }
-
-            if (!_horizontalScrollRefreshTimers.TryGetValue(grid, out var timer))
-            {
-                timer = new DispatcherTimer
-                {
-                    Interval = TimeSpan.FromMilliseconds(150)
-                };
-                timer.Tick += HorizontalScrollRefreshTimer_Tick;
-                _horizontalScrollRefreshTimers[grid] = timer;
-            }
-
-            timer.Tag = grid;
-            timer.Stop();
-            timer.Start();
-        }
-
-        private void HorizontalScrollRefreshTimer_Tick(object? sender, EventArgs e)
-        {
-            if (sender is not DispatcherTimer timer)
-            {
-                return;
-            }
-
-            timer.Stop();
-
-            if (timer.Tag is not DataGrid grid)
-            {
-                return;
-            }
-
-            RefreshDataGridPerfect(grid, afterHorizontalScroll: true);
-        }
-
-        private static T? FindParent<T>(DependencyObject child) where T : DependencyObject
-        {
-            var current = VisualTreeHelper.GetParent(child);
-            while (current != null)
-            {
-                if (current is T match)
-                {
-                    return match;
-                }
-
-                current = VisualTreeHelper.GetParent(current);
-            }
-
-            return null;
-        }
-
-        private static string ToExcelColumnLetter(int columnIndex)
-        {
-            var dividend = columnIndex + 1;
-            var columnName = string.Empty;
-
-            while (dividend > 0)
-            {
-                var modulo = (dividend - 1) % 26;
-                columnName = Convert.ToChar('A' + modulo) + columnName;
-                dividend = (dividend - modulo) / 26;
-            }
-
-            return columnName;
         }
     }
 }

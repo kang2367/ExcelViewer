@@ -3,108 +3,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
-        xmlns:local="clr-namespace:ExcelDropViewer"
+        xmlns:wfi="clr-namespace:System.Windows.Forms.Integration;assembly=WindowsFormsIntegration"
         mc:Ignorable="d"
         Title="Excel 드롭 뷰어"
         WindowState="Maximized"
         Background="#F5F6F8">
     <Window.Resources>
-        <local:ResultToBackgroundConverter x:Key="ResultToBackgroundConverter" />
-        <Style x:Key="ExcelColumnHeaderStyle" TargetType="DataGridColumnHeader">
-            <Setter Property="Background" Value="#E8EAED" />
-            <Setter Property="Foreground" Value="#374151" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Padding" Value="10,6" />
-            <Setter Property="BorderBrush" Value="#C5CAD3" />
-            <Setter Property="BorderThickness" Value="0,0,1,1" />
-            <Setter Property="SeparatorBrush" Value="#9CA3AF" />
-            <Setter Property="SeparatorVisibility" Value="Visible" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="DataGridColumnHeader">
-                        <Grid SnapsToDevicePixels="True">
-                            <Border Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                    Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                                                  RecognizesAccessKey="True"
-                                                  SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
-                            </Border>
-                            <Thumb x:Name="PART_LeftHeaderGripper"
-                                   Width="8"
-                                   HorizontalAlignment="Left"
-                                   Background="Transparent"
-                                   Cursor="SizeWE" />
-                            <Thumb x:Name="PART_RightHeaderGripper"
-                                   Width="8"
-                                   HorizontalAlignment="Right"
-                                   Background="Transparent"
-                                   Cursor="SizeWE" />
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="ExcelRowHeaderStyle" TargetType="DataGridRowHeader">
-            <Setter Property="Background" Value="#E8EAED" />
-            <Setter Property="Foreground" Value="#374151" />
-            <Setter Property="FontSize" Value="12" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
-            <Setter Property="Padding" Value="4,2" />
-            <Setter Property="BorderBrush" Value="#C5CAD3" />
-            <Setter Property="BorderThickness" Value="0,0,1,0" />
-            <Setter Property="ClipToBounds" Value="True" />
-        </Style>
-        <Style x:Key="WrappingCellTextStyle" TargetType="TextBlock">
-            <Setter Property="TextWrapping" Value="Wrap" />
-            <Setter Property="TextTrimming" Value="None" />
-            <Setter Property="VerticalAlignment" Value="Top" />
-        </Style>
-        <Style x:Key="WrappingDataGridCellStyle" TargetType="DataGridCell">
-            <Setter Property="VerticalContentAlignment" Value="Top" />
-            <Setter Property="Padding" Value="8,6" />
-        </Style>
-        <Style x:Key="ZoneDataGridStyle" TargetType="DataGrid">
-            <Setter Property="Visibility" Value="Collapsed" />
-            <Setter Property="Margin" Value="12" />
-            <Setter Property="IsReadOnly" Value="True" />
-            <Setter Property="AutoGenerateColumns" Value="False" />
-            <Setter Property="CanUserAddRows" Value="False" />
-            <Setter Property="CanUserDeleteRows" Value="False" />
-            <Setter Property="CanUserSortColumns" Value="False" />
-            <Setter Property="CanUserReorderColumns" Value="False" />
-            <Setter Property="CanUserResizeColumns" Value="True" />
-            <Setter Property="CanUserResizeRows" Value="False" />
-            <Setter Property="RowHeight" Value="{x:Static sys:Double.NaN}" />
-            <Setter Property="CellStyle" Value="{StaticResource WrappingDataGridCellStyle}" />
-            <Setter Property="EnableRowVirtualization" Value="True" />
-            <Setter Property="EnableColumnVirtualization" Value="False" />
-            <Setter Property="ScrollViewer.CanContentScroll" Value="False" />
-            <Setter Property="ScrollViewer.IsDeferredScrollingEnabled" Value="True" />
-            <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
-            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Standard" />
-            <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
-            <Setter Property="GridLinesVisibility" Value="All" />
-            <Setter Property="HeadersVisibility" Value="All" />
-            <Setter Property="RowHeaderWidth" Value="44" />
-            <Setter Property="ColumnHeaderStyle" Value="{StaticResource ExcelColumnHeaderStyle}" />
-            <Setter Property="RowHeaderStyle" Value="{StaticResource ExcelRowHeaderStyle}" />
-            <Setter Property="AlternatingRowBackground" Value="#ECEEF2" />
-            <Setter Property="Background" Value="White" />
-            <Setter Property="BorderBrush" Value="#D1D5DB" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="RowBackground" Value="White" />
-            <Setter Property="SelectionMode" Value="Extended" />
-            <Setter Property="SelectionUnit" Value="Cell" />
-        </Style>
         <Style x:Key="ZoneDropHintStyle" TargetType="TextBlock">
             <Setter Property="Text" Value="엑셀 파일을 여기로 드래그 앤 드롭하세요." />
             <Setter Property="HorizontalAlignment" Value="Center" />
@@ -121,6 +25,10 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="4" />
             <Setter Property="Margin" Value="4" />
+        </Style>
+        <Style x:Key="ZoneReoGridHostStyle" TargetType="wfi:WindowsFormsHost">
+            <Setter Property="Visibility" Value="Collapsed" />
+            <Setter Property="Margin" Value="12" />
         </Style>
     </Window.Resources>
 
@@ -139,67 +47,53 @@
                 <MenuItem Header="BOM one row" Click="BomOneRowMenuItem_Click" />
                 <MenuItem Header="Compare BOM" Click="CompareBomMenuItem_Click" />
                 <MenuItem Header="Reference check" Click="ReferenceCheckMenuItem_Click" />
+                <MenuItem Header="Make BOM DB" Click="MakeBomDbMenuItem_Click" />
             </MenuItem>
         </Menu>
 
         <Grid Grid.Row="1" Margin="12" Background="#F5F6F8">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" MinWidth="240" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="*" MinWidth="240" />
-        </Grid.ColumnDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="240" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="240" />
+            </Grid.ColumnDefinitions>
 
-        <Border x:Name="LeftZone"
-                Grid.Column="0"
-                Style="{StaticResource DropZoneBorderStyle}"
-                AllowDrop="True"
-                DragOver="LeftZone_DragOver"
-                Drop="LeftZone_Drop">
-            <Grid>
-                <TextBlock x:Name="LeftDropHint" Style="{StaticResource ZoneDropHintStyle}" />
-                <DataGrid x:Name="LeftExcelGrid"
-                          Style="{StaticResource ZoneDataGridStyle}"
-                          GotFocus="ExcelGrid_GotFocus"
-                          SelectionChanged="ExcelGrid_SelectionChanged"
-                          ScrollViewer.ScrollChanged="ExcelDataGrid_ScrollChanged"
-                          PreviewMouseLeftButtonUp="ExcelDataGrid_PreviewMouseLeftButtonUp"
-                          LoadingRow="ExcelGrid_LoadingRow"
-                          PreviewMouseWheel="ExcelGrid_PreviewMouseWheel" />
-            </Grid>
-        </Border>
+            <Border x:Name="LeftZone"
+                    Grid.Column="0"
+                    Style="{StaticResource DropZoneBorderStyle}"
+                    AllowDrop="True"
+                    DragOver="LeftZone_DragOver"
+                    Drop="LeftZone_Drop">
+                <Grid>
+                    <TextBlock x:Name="LeftDropHint" Style="{StaticResource ZoneDropHintStyle}" />
+                    <wfi:WindowsFormsHost x:Name="LeftReoGridHost" Style="{StaticResource ZoneReoGridHostStyle}" />
+                </Grid>
+            </Border>
 
-        <GridSplitter Grid.Column="1"
-                      Width="6"
-                      HorizontalAlignment="Center"
-                      VerticalAlignment="Stretch"
-                      Background="#D1D5DB"
-                      ShowsPreview="True" />
+            <GridSplitter Grid.Column="1"
+                          Width="6"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch"
+                          Background="#D1D5DB"
+                          ShowsPreview="True" />
 
-        <Border x:Name="RightZone"
-                Grid.Column="2"
-                Style="{StaticResource DropZoneBorderStyle}"
-                AllowDrop="True"
-                DragOver="RightZone_DragOver"
-                Drop="RightZone_Drop">
-            <Grid>
-                <TextBlock x:Name="RightDropHint" Style="{StaticResource ZoneDropHintStyle}" />
-                <DataGrid x:Name="RightExcelGrid"
-                          Style="{StaticResource ZoneDataGridStyle}"
-                          GotFocus="ExcelGrid_GotFocus"
-                          SelectionChanged="ExcelGrid_SelectionChanged"
-                          ScrollViewer.ScrollChanged="ExcelDataGrid_ScrollChanged"
-                          PreviewMouseLeftButtonUp="ExcelDataGrid_PreviewMouseLeftButtonUp"
-                          LoadingRow="ExcelGrid_LoadingRow"
-                          PreviewMouseWheel="ExcelGrid_PreviewMouseWheel" />
-            </Grid>
-        </Border>
+            <Border x:Name="RightZone"
+                    Grid.Column="2"
+                    Style="{StaticResource DropZoneBorderStyle}"
+                    AllowDrop="True"
+                    DragOver="RightZone_DragOver"
+                    Drop="RightZone_Drop">
+                <Grid>
+                    <TextBlock x:Name="RightDropHint" Style="{StaticResource ZoneDropHintStyle}" />
+                    <wfi:WindowsFormsHost x:Name="RightReoGridHost" Style="{StaticResource ZoneReoGridHostStyle}" />
+                </Grid>
+            </Border>
         </Grid>
 
         <Border Grid.Row="2"
                 Background="#FAFBFC"
                 BorderBrush="#D1D5DB"
-                BorderThickness="0,1,0,0"
-                Margin="0,0,0,0">
+                BorderThickness="0,1,0,0">
             <DockPanel Margin="8">
                 <TextBlock DockPanel.Dock="Top"
                            Text="Log"

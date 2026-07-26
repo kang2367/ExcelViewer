@@ -9,11 +9,11 @@ namespace ExcelDropViewer
 {
     internal sealed class UiLogWriter
     {
-        private readonly TextBox _logTextBox;
+        private readonly System.Windows.Controls.TextBox _logTextBox;
         private readonly ScrollViewer? _scrollViewer;
         private readonly Dispatcher _dispatcher;
 
-        public UiLogWriter(TextBox logTextBox, ScrollViewer? scrollViewer = null)
+        public UiLogWriter(System.Windows.Controls.TextBox logTextBox, ScrollViewer? scrollViewer = null)
         {
             _logTextBox = logTextBox;
             _scrollViewer = scrollViewer;

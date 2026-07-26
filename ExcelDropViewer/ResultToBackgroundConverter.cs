@@ -7,14 +7,14 @@ namespace ExcelDropViewer
 {
     public sealed class ResultToBackgroundConverter : IValueConverter
     {
-        private static readonly SolidColorBrush NgBackground = new(Color.FromRgb(255, 228, 228));
+        private static readonly SolidColorBrush NgBackground = new(System.Windows.Media.Color.FromRgb(255, 228, 228));
 
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
         {
             var text = System.Convert.ToString(value, culture)?.Trim();
             return string.Equals(text, "NG", StringComparison.OrdinalIgnoreCase)
                 ? NgBackground
-                : Brushes.Transparent;
+                : System.Windows.Media.Brushes.Transparent;
         }
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
