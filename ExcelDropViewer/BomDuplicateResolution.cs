@@ -4,6 +4,7 @@ namespace ExcelDropViewer
     {
         Update,
         Skip,
+        AllSkip,
         Cancel
     }
 }

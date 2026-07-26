@@ -11,7 +11,7 @@ namespace ExcelDropViewer
         private BomDuplicateItemDialog(string itemNumber)
         {
             Title = "품목 번호 중복";
-            Width = 460;
+            Width = 520;
             SizeToContent = SizeToContent.Height;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             ResizeMode = ResizeMode.NoResize;
@@ -24,18 +24,22 @@ namespace ExcelDropViewer
                 Margin = new Thickness(0, 0, 0, 16)
             };
 
-            var updateButton = CreateButton("Update(업데이트)", () => CloseWith(BomDuplicateResolution.Update));
-            var skipButton = CreateButton("Skip(건너뛰기)", () => CloseWith(BomDuplicateResolution.Skip));
-            var cancelButton = CreateButton("Cancel(취소)", () => CloseWith(BomDuplicateResolution.Cancel));
+            var primaryButtonPanel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 0, 0, 8)
+            };
+            primaryButtonPanel.Children.Add(CreateButton("Update(업데이트)", () => CloseWith(BomDuplicateResolution.Update)));
+            primaryButtonPanel.Children.Add(CreateButton("Skip(건너뛰기)", () => CloseWith(BomDuplicateResolution.Skip)));
 
-            var buttonPanel = new StackPanel
+            var secondaryButtonPanel = new StackPanel
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Right
             };
-            buttonPanel.Children.Add(updateButton);
-            buttonPanel.Children.Add(skipButton);
-            buttonPanel.Children.Add(cancelButton);
+            secondaryButtonPanel.Children.Add(CreateButton("All Skip(모두 건너뛰기)", () => CloseWith(BomDuplicateResolution.AllSkip)));
+            secondaryButtonPanel.Children.Add(CreateButton("Cancel(취소)", () => CloseWith(BomDuplicateResolution.Cancel)));
 
             Content = new StackPanel
             {
@@ -43,7 +47,8 @@ namespace ExcelDropViewer
                 Children =
                 {
                     message,
-                    buttonPanel
+                    primaryButtonPanel,
+                    secondaryButtonPanel
                 }
             };
         }
@@ -80,7 +85,7 @@ namespace ExcelDropViewer
             var button = new System.Windows.Controls.Button
             {
                 Content = content,
-                MinWidth = 110,
+                MinWidth = 120,
                 Margin = new Thickness(6, 0, 0, 0),
                 Padding = new Thickness(12, 6, 12, 6)
             };

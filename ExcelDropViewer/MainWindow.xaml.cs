@@ -178,6 +178,11 @@ namespace ExcelDropViewer
                     (current, total) => ReportThrottledRowProgress("Make BOM DB", current, total, "DB 적재"));
 
                 LogProgress("Make BOM DB", $"헤더 행: {result.HeaderRowIndex + 1}행, DB 경로: {result.DatabasePath}");
+                if (!string.IsNullOrWhiteSpace(result.BackupFileName))
+                {
+                    LogProgress("Make BOM DB", $"백업 파일: {result.BackupFileName}");
+                }
+
                 LogProgress(
                     "Make BOM DB",
                     $"신규 추가: {result.InsertedCount}건, 업데이트: {result.UpdatedCount}건, 건너뜀: {result.SkippedCount}건{(result.Cancelled ? ", 취소됨(롤백)" : string.Empty)}.");

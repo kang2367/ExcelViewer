@@ -30,9 +30,13 @@ namespace ExcelDropViewer
             var updatedCount = 0;
             var skippedCount = 0;
             var cancelled = false;
+            var skipAllDuplicates = false;
             var totalRows = Math.Max(0, table.Rows.Count - (mapping.HeaderRowIndex + 1));
 
-            using var repository = new BomDbRepository(BomDbRepository.GetDefaultDatabasePath());
+            var databasePath = BomDbRepository.GetDefaultDatabasePath();
+            var backupFileName = BomDbBackupService.CreateBackupIfExists(databasePath);
+
+            using var repository = new BomDbRepository(databasePath);
             repository.BeginTransaction();
 
             try
@@ -59,7 +63,11 @@ namespace ExcelDropViewer
 
                     if (repository.ExistsByItemNumber(itemNumber))
                     {
-                        var resolution = BomDuplicateItemDialog.Show(ownerWindow, itemNumber);
+                        var resolution = ResolveDuplicateAction(
+                            ownerWindow,
+                            itemNumber,
+                            ref skipAllDuplicates);
+
                         switch (resolution)
                         {
                             case BomDuplicateResolution.Update:
@@ -107,7 +115,28 @@ namespace ExcelDropViewer
                 skippedCount,
                 cancelled,
                 repository.DatabasePath,
-                mapping.HeaderRowIndex);
+                mapping.HeaderRowIndex,
+                backupFileName);
+        }
+
+        private static BomDuplicateResolution ResolveDuplicateAction(
+            Window ownerWindow,
+            string itemNumber,
+            ref bool skipAllDuplicates)
+        {
+            if (skipAllDuplicates)
+            {
+                return BomDuplicateResolution.Skip;
+            }
+
+            var resolution = BomDuplicateItemDialog.Show(ownerWindow, itemNumber);
+            if (resolution == BomDuplicateResolution.AllSkip)
+            {
+                skipAllDuplicates = true;
+                return BomDuplicateResolution.Skip;
+            }
+
+            return resolution;
         }
 
         private static BomDbColumnMapping ResolveHeaderMapping(DataTable table, int selectedHeaderRowIndex)
@@ -261,7 +290,8 @@ namespace ExcelDropViewer
             int skippedCount,
             bool cancelled,
             string databasePath,
-            int headerRowIndex)
+            int headerRowIndex,
+            string? backupFileName)
         {
             InsertedCount = insertedCount;
             UpdatedCount = updatedCount;
@@ -269,6 +299,7 @@ namespace ExcelDropViewer
             Cancelled = cancelled;
             DatabasePath = databasePath;
             HeaderRowIndex = headerRowIndex;
+            BackupFileName = backupFileName;
         }
 
         public int InsertedCount { get; }
@@ -283,17 +314,26 @@ namespace ExcelDropViewer
 
         public int HeaderRowIndex { get; }
 
+        public string? BackupFileName { get; }
+
         public string BuildSummaryMessage()
         {
-            var summary =
-                $"신규 추가: {InsertedCount}건, 업데이트: {UpdatedCount}건, 건너뜀: {SkippedCount}건";
-
             if (Cancelled)
             {
-                return $"{summary}\n작업이 취소되어 변경 사항이 저장되지 않았습니다.";
+                return $"BOM DB 업데이트가 취소되었습니다.\n" +
+                       $"- 백업 파일: {FormatBackupFileName()}\n" +
+                       $"- 신규 추가: {InsertedCount}건, 업데이트: {UpdatedCount}건, 건너뜀(Skip): {SkippedCount}건\n" +
+                       "작업이 취소되어 변경 사항이 저장되지 않았습니다.";
             }
 
-            return $"{summary}\n경로: {DatabasePath}";
+            return $"BOM DB 업데이트가 완료되었습니다.\n" +
+                   $"- 백업 파일: {FormatBackupFileName()}\n" +
+                   $"- 신규 추가: {InsertedCount}건, 업데이트: {UpdatedCount}건, 건너뜀(Skip): {SkippedCount}건";
+        }
+
+        private string FormatBackupFileName()
+        {
+            return string.IsNullOrWhiteSpace(BackupFileName) ? "없음" : BackupFileName;
         }
     }
 }
