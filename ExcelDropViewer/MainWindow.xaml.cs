@@ -25,6 +25,9 @@ namespace ExcelDropViewer
         private readonly Dictionary<ReoGridControl, string> _sourceFilePaths = new();
         private readonly HashSet<ReoGridControl> _loadedReoGrids = new();
         private UiLogWriter? _logWriter;
+        private readonly DigiKeyApiService _digiKeyApiService = new();
+        private string? _contextMenuPartNumber;
+        private string? _contextMenuManufacturer;
 
         public MainWindow()
         {
@@ -49,8 +52,83 @@ namespace ExcelDropViewer
                 _activeReoGrid = grid;
                 TrackSelectedRow(grid);
             };
+            SetupReoGridContextMenu(grid);
             host.Child = grid;
             return grid;
+        }
+
+        private void SetupReoGridContextMenu(ReoGridControl grid)
+        {
+            var partSearchMenu = new System.Windows.Forms.ToolStripMenuItem("부품 검색");
+            var digiKeyMenu = new System.Windows.Forms.ToolStripMenuItem("Digi-Key");
+            digiKeyMenu.Click += async (_, _) => await MenuDigiKeySearchAsync();
+            partSearchMenu.DropDownItems.Add(digiKeyMenu);
+
+            var contextMenu = new System.Windows.Forms.ContextMenuStrip();
+            contextMenu.Items.Add(partSearchMenu);
+            contextMenu.Opening += (_, _) => CaptureContextMenuPartNumber(grid);
+            grid.ContextMenuStrip = contextMenu;
+        }
+
+        private void CaptureContextMenuPartNumber(ReoGridControl grid)
+        {
+            _activeReoGrid = grid;
+            var sheet = grid.CurrentWorksheet;
+            var range = sheet.SelectionRange;
+            if (range.Row < 0 || range.Col < 0)
+            {
+                _contextMenuPartNumber = null;
+                _contextMenuManufacturer = null;
+                return;
+            }
+
+            _contextMenuPartNumber = ReoGridWorksheetAdapter.GetCellText(sheet, range.Row, range.Col);
+            _contextMenuManufacturer = ReoGridWorksheetAdapter.GetCellText(sheet, range.Row, range.Col + 1);
+        }
+
+        private async Task MenuDigiKeySearchAsync()
+        {
+            var partNumber = _contextMenuPartNumber?.Trim();
+            if (string.IsNullOrWhiteSpace(partNumber))
+            {
+                LogProgress("Digi-Key", "검색할 부품 번호가 선택되지 않았습니다.");
+                return;
+            }
+
+            var manufacturer = DigiKeyManufacturerNameNormalizer.Normalize(_contextMenuManufacturer);
+
+            var config = DigikeyConfigStore.Load();
+            if (string.IsNullOrWhiteSpace(config.ClientId) || string.IsNullOrWhiteSpace(config.ClientSecret))
+            {
+                LogProgress(
+                    "Digi-Key",
+                    "CONFIG.INI에 Digi-Key API 설정이 없습니다. [설정] > [Digikey] 메뉴에서 먼저 설정해 주세요.");
+                return;
+            }
+
+            try
+            {
+                LogStart("Digi-Key");
+                LogProgress(
+                    "Digi-Key",
+                    string.IsNullOrWhiteSpace(manufacturer)
+                        ? $"부품 번호 '{partNumber}' 검색 요청 중..."
+                        : $"부품 번호 '{partNumber}', 제조사 '{manufacturer}' 검색 요청 중...");
+
+                Mouse.OverrideCursor = Cursors.Wait;
+                var summary = await _digiKeyApiService.SearchByPartNumberAsync(partNumber, manufacturer, config);
+                _logWriter?.LogMultiline(DigiKeySearchResultFormatter.Format(summary));
+                LogEnd("Digi-Key");
+            }
+            catch (Exception ex)
+            {
+                LogProgress("Digi-Key", $"오류: {ex.Message}");
+                LogEnd("Digi-Key");
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+            }
         }
 
         private void TrackSelectedRow(ReoGridControl grid)
@@ -358,6 +436,15 @@ namespace ExcelDropViewer
             }
 
             return true;
+        }
+
+        private void MenuDigikeyConfig_Click(object sender, RoutedEventArgs e)
+        {
+            var dlg = new DigikeyConfigWindow
+            {
+                Owner = this
+            };
+            dlg.ShowDialog();
         }
 
         private void SaveAsMenuItem_Click(object sender, RoutedEventArgs e)

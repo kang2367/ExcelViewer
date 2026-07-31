@@ -40,6 +40,45 @@ namespace ExcelDropViewer
             AppendLine($"{functionName} {action} {current}/{total}.");
         }
 
+        public void LogMultiline(string message)
+        {
+            if (string.IsNullOrEmpty(message))
+            {
+                return;
+            }
+
+            var timestamp = $"[{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)}]";
+            var formatted = timestamp + message.Replace("\r\n", "\n").Replace("\n", Environment.NewLine + timestamp);
+
+            if (_dispatcher.CheckAccess())
+            {
+                WriteBlock(formatted);
+                return;
+            }
+
+            _dispatcher.Invoke(() => WriteBlock(formatted));
+        }
+
+        private void WriteBlock(string block)
+        {
+            if (string.IsNullOrEmpty(_logTextBox.Text))
+            {
+                _logTextBox.Text = block;
+            }
+            else
+            {
+                _logTextBox.AppendText(Environment.NewLine + block);
+            }
+
+            _logTextBox.CaretIndex = _logTextBox.Text.Length;
+            _logTextBox.ScrollToEnd();
+
+            if (_scrollViewer != null)
+            {
+                _scrollViewer.ScrollToVerticalOffset(_scrollViewer.ExtentHeight);
+            }
+        }
+
         private void AppendLine(string message)
         {
             var line = $"[{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.CurrentCulture)}]{message}";

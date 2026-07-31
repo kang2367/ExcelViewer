@@ -8,9 +8,14 @@
     <ImportWindowsFormsNamespace>false</ImportWindowsFormsNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>AppExcelViewer_K3.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="build\**" />
+    <Content Include="AppExcelViewer_K3.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Using Remove="System.Windows.Forms" />
     <PackageReference Include="ClosedXML" Version="0.104.2" />
     <PackageReference Include="ExcelDataReader" Version="3.7.0" />
@@ -19,5 +24,16 @@
     <PackageReference Include="unvell.ReoGrid.dll" Version="3.3.1" />
     <PackageReference Include="unvell.ReoGridWPF.dll" Version="3.3.0" />
   </ItemGroup>
+
+  <Target Name="PatchApplicationExeIcon" AfterTargets="Build" Condition="'$(ApplicationIcon)' != '' and Exists('$(ApplicationIcon)')">
+    <PropertyGroup>
+      <_IconPatcherProject>$(MSBuildProjectDirectory)\build\IconPatcher\IconPatcher.csproj</_IconPatcherProject>
+      <_IconPatcherExe>$(MSBuildProjectDirectory)\build\IconPatcher\bin\$(Configuration)\net10.0-windows\IconPatcher.exe</_IconPatcherExe>
+      <_ApplicationExe>$(TargetDir)$(AssemblyName).exe</_ApplicationExe>
+      <_IconFile>$(MSBuildProjectDirectory)\$(ApplicationIcon)</_IconFile>
+    </PropertyGroup>
+    <MSBuild Projects="$(_IconPatcherProject)" Targets="Restore;Build" Properties="Configuration=$(Configuration)" />
+    <Exec Command="&quot;$(_IconPatcherExe)&quot; &quot;$(_ApplicationExe)&quot; &quot;$(_IconFile)&quot;" />
+  </Target>
 
 </Project>

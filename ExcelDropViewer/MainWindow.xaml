@@ -6,6 +6,7 @@
         xmlns:wfi="clr-namespace:System.Windows.Forms.Integration;assembly=WindowsFormsIntegration"
         mc:Ignorable="d"
         Title="Excel 드롭 뷰어"
+        Icon="AppExcelViewer_K3.ico"
         WindowState="Maximized"
         Background="#F5F6F8">
     <Window.Resources>
@@ -48,6 +49,9 @@
                 <MenuItem Header="Compare BOM" Click="CompareBomMenuItem_Click" />
                 <MenuItem Header="Reference check" Click="ReferenceCheckMenuItem_Click" />
                 <MenuItem Header="Make BOM DB" Click="MakeBomDbMenuItem_Click" />
+            </MenuItem>
+            <MenuItem Header="설정">
+                <MenuItem Header="Digikey" Click="MenuDigikeyConfig_Click" />
             </MenuItem>
         </Menu>
 
