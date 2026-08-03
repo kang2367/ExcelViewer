@@ -418,6 +418,9 @@ namespace ExcelDropViewer
                 ? variation.QuantityAvailableForPackageType
                 : product.QuantityAvailable;
 
+            var minimumOrderQuantity = variation.MinimumOrderQuantity;
+            var baseUnitPrice = ResolveBaseUnitPrice(sortedPricing, minimumOrderQuantity);
+
             return new DigiKeyProductSummary
             {
                 SearchedPartNumber = searchedPartNumber,
@@ -425,9 +428,45 @@ namespace ExcelDropViewer
                 DigiKeyPartNumber = variation.DigiKeyProductNumber ?? "-",
                 DigiKeyManufacturer = product.Manufacturer?.Name ?? "-",
                 PackagingType = "Cut Tape (CT)",
+                MinimumOrderQuantity = minimumOrderQuantity,
                 QuantityAvailable = quantityAvailable,
+                DisplayPartNumber = searchedPartNumber,
+                DisplayManufacturer = ResolveDisplayManufacturer(searchedManufacturer, product.Manufacturer?.Name),
+                FormattedStock = FormatStock(quantityAvailable),
+                FormattedBaseUnitPrice = baseUnitPrice,
                 PriceTiers = ParsePriceTiers(sortedPricing)
             };
+        }
+
+        private static string ResolveDisplayManufacturer(string searchedManufacturer, string? digiKeyManufacturer)
+        {
+            if (!string.IsNullOrWhiteSpace(searchedManufacturer) && searchedManufacturer != "-")
+            {
+                return searchedManufacturer;
+            }
+
+            return string.IsNullOrWhiteSpace(digiKeyManufacturer) ? "-" : digiKeyManufacturer;
+        }
+
+        private static string ResolveBaseUnitPrice(
+            IReadOnlyList<DigiKeyPriceBreak> sortedPricing,
+            int minimumOrderQuantity)
+        {
+            if (sortedPricing.Count == 0)
+            {
+                return "N/A";
+            }
+
+            var targetQuantity = minimumOrderQuantity > 0 ? minimumOrderQuantity : 1;
+            var match = sortedPricing.LastOrDefault(price => price.BreakQuantity <= targetQuantity)
+                ?? sortedPricing[0];
+
+            return FormatKrwPrice(match.UnitPrice);
+        }
+
+        private static string FormatStock(int quantityAvailable)
+        {
+            return quantityAvailable.ToString("#,##0", CultureInfo.GetCultureInfo("ko-KR")) + " 개";
         }
 
         private static List<DigiKeyPriceTier> ParsePriceTiers(IReadOnlyList<DigiKeyPriceBreak> sortedPricing)
@@ -487,7 +526,12 @@ namespace ExcelDropViewer
         public string DigiKeyPartNumber { get; init; } = string.Empty;
         public string DigiKeyManufacturer { get; init; } = string.Empty;
         public string PackagingType { get; init; } = string.Empty;
+        public int MinimumOrderQuantity { get; init; }
         public int QuantityAvailable { get; init; }
+        public string DisplayPartNumber { get; init; } = string.Empty;
+        public string DisplayManufacturer { get; init; } = string.Empty;
+        public string FormattedStock { get; init; } = string.Empty;
+        public string FormattedBaseUnitPrice { get; init; } = "N/A";
         public IReadOnlyList<DigiKeyPriceTier> PriceTiers { get; init; } = Array.Empty<DigiKeyPriceTier>();
     }
 

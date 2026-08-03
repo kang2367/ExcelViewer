@@ -118,6 +118,8 @@ namespace ExcelDropViewer
                 Mouse.OverrideCursor = Cursors.Wait;
                 var summary = await _digiKeyApiService.SearchByPartNumberAsync(partNumber, manufacturer, config);
                 _logWriter?.LogMultiline(DigiKeySearchResultFormatter.Format(summary));
+                UpsertDigiKeySearchResultToRightGrid(summary);
+                LogProgress("Digi-Key", "우측 그리드에 검색 결과를 반영했습니다.");
                 LogEnd("Digi-Key");
             }
             catch (Exception ex)
@@ -129,6 +131,19 @@ namespace ExcelDropViewer
             {
                 Mouse.OverrideCursor = null;
             }
+        }
+
+        private void UpsertDigiKeySearchResultToRightGrid(DigiKeyProductSummary summary)
+        {
+            EnsureRightGridVisible();
+            DigiKeySearchResultGridWriter.Upsert(RightReoGrid.CurrentWorksheet, summary);
+            _loadedReoGrids.Add(RightReoGrid);
+        }
+
+        private void EnsureRightGridVisible()
+        {
+            RightDropHint.Visibility = Visibility.Collapsed;
+            RightReoGridHost.Visibility = Visibility.Visible;
         }
 
         private void TrackSelectedRow(ReoGridControl grid)
