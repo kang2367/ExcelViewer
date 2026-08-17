@@ -55,6 +55,40 @@ namespace ExcelDropViewer
             WHERE item_number = $item_number;
             """;
 
+        private static readonly string SelectByDescriptionExactSql = $"""
+            SELECT
+                item_number,
+                part_name,
+                item_description,
+                manufacturer,
+                operating_temperature
+            FROM {TableName}
+            WHERE item_description = $item_description
+            LIMIT 1;
+            """;
+
+        private static readonly string SelectByDescriptionIgnoreCaseSql = $"""
+            SELECT
+                item_number,
+                part_name,
+                item_description,
+                manufacturer,
+                operating_temperature
+            FROM {TableName}
+            WHERE UPPER(TRIM(item_description)) = UPPER(TRIM($item_description))
+            LIMIT 1;
+            """;
+
+        private static readonly string SelectAllSql = $"""
+            SELECT
+                item_number,
+                part_name,
+                item_description,
+                manufacturer,
+                operating_temperature
+            FROM {TableName};
+            """;
+
         private readonly SqliteConnection _connection;
         private readonly string _databasePath;
         private SqliteTransaction? _transaction;
@@ -129,6 +163,57 @@ namespace ExcelDropViewer
             using var command = CreateCommand(UpdateSql);
             BindRecordParameters(command, record);
             return command.ExecuteNonQuery();
+        }
+
+        public BomPartRecord? TryFindByItemDescription(string itemDescription)
+        {
+            if (string.IsNullOrWhiteSpace(itemDescription))
+            {
+                return null;
+            }
+
+            var exactMatch = TryFindByItemDescriptionInternal(itemDescription, ignoreCase: false);
+            if (exactMatch != null)
+            {
+                return exactMatch;
+            }
+
+            return TryFindByItemDescriptionInternal(itemDescription, ignoreCase: true);
+        }
+
+        public IReadOnlyList<BomPartRecord> GetAllParts()
+        {
+            var records = new List<BomPartRecord>();
+            using var command = CreateCommand(SelectAllSql);
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                records.Add(ReadPartRecord(reader));
+            }
+
+            return records;
+        }
+
+        private BomPartRecord? TryFindByItemDescriptionInternal(string itemDescription, bool ignoreCase)
+        {
+            using var command = CreateCommand(ignoreCase
+                ? SelectByDescriptionIgnoreCaseSql
+                : SelectByDescriptionExactSql);
+            command.Parameters.AddWithValue("$item_description", itemDescription.Trim());
+            using var reader = command.ExecuteReader();
+            return reader.Read() ? ReadPartRecord(reader) : null;
+        }
+
+        private static BomPartRecord ReadPartRecord(SqliteDataReader reader)
+        {
+            return new BomPartRecord
+            {
+                ItemNumber = reader.GetString(0),
+                PartName = reader.GetString(1),
+                ItemDescription = reader.GetString(2),
+                Manufacturer = reader.GetString(3),
+                OperatingTemperature = reader.GetString(4)
+            };
         }
 
         public void Dispose()

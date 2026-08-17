@@ -49,6 +49,8 @@
                 <MenuItem Header="Compare BOM" Click="CompareBomMenuItem_Click" />
                 <MenuItem Header="Reference check" Click="ReferenceCheckMenuItem_Click" />
                 <MenuItem Header="Make BOM DB" Click="MakeBomDbMenuItem_Click" />
+                <MenuItem Header="Make PBA BOM" Click="MakePbaBomMenuItem_Click" />
+                <MenuItem Header="Match PDB BOM with DB" Click="MatchPdbBomWithDbMenuItem_Click" />
             </MenuItem>
             <MenuItem Header="설정">
                 <MenuItem Header="Digikey" Click="MenuDigikeyConfig_Click" />

@@ -359,6 +359,150 @@ namespace ExcelDropViewer
             }
         }
 
+        private void MakePbaBomMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (!TryGetLoadedWorksheet(LeftReoGrid, out var rawWorksheet, out _)
+                || !TryGetLoadedWorksheet(RightReoGrid, out var templateWorksheet, out _))
+            {
+                MessageBox.Show(
+                    "왼쪽 창의 Raw Data 파일과 오른쪽 창의 Template 파일을 모두 열어주세요.",
+                    "알림",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                LogStart("Make PBA BOM");
+
+                var rawTable = ReoGridWorksheetAdapter.ToDataTable(rawWorksheet);
+                var templateTable = ReoGridWorksheetAdapter.ToDataTable(templateWorksheet);
+
+                if (rawTable.Rows.Count == 0 || templateTable.Rows.Count == 0)
+                {
+                    MessageBox.Show(
+                        "왼쪽 창의 Raw Data 파일과 오른쪽 창의 Template 파일을 모두 열어주세요.",
+                        "알림",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    LogEnd("Make PBA BOM");
+                    return;
+                }
+
+                LogProgress("Make PBA BOM", "Raw Data를 Template BOM 양식으로 변환 중...");
+
+                var result = PbaBomTransformer.Transform(
+                    rawTable,
+                    templateTable,
+                    (current, total) => ReportThrottledRowProgress("Make PBA BOM", current, total, "변환 처리"));
+
+                var sampleColumn = result.Layout.ReferenceColumn >= 0
+                    ? result.Layout.ReferenceColumn
+                    : 0;
+                var baseFontSize = PbaBomWorksheetStyler.TryGetBaseFontSize(
+                    templateWorksheet,
+                    result.Layout.TemplateHeaderRow + 1,
+                    sampleColumn);
+
+                ReoGridWorksheetAdapter.ApplyDataTable(templateWorksheet, result.OutputTable);
+                PbaBomWorksheetStyler.Apply(templateWorksheet, result.Layout, baseFontSize);
+                EnsureRightGridVisible();
+                _loadedReoGrids.Add(RightReoGrid);
+
+                LogProgress(
+                    "Make PBA BOM",
+                    $"PBA BOM 변환이 성공적으로 완료되었습니다. (총 {result.NormalItemCount}개 항목, NC {result.NcItemCount}개 항목)");
+                LogEnd("Make PBA BOM");
+            }
+            catch (Exception ex)
+            {
+                LogProgress("Make PBA BOM", $"오류: {ex.Message}");
+                LogEnd("Make PBA BOM");
+                MessageBox.Show(
+                    $"Make PBA BOM 처리 중 오류가 발생했습니다.\n{ex.Message}",
+                    "오류",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
+        private void MatchPdbBomWithDbMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            var targetGrid = ResolveTargetGrid();
+            if (!TryGetLoadedWorksheet(targetGrid, out var worksheet, out _))
+            {
+                MessageBox.Show(
+                    "매칭 작업을 진행할 BOM 파일이 열려있지 않습니다.",
+                    "알림",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            var databasePath = BomDbPaths.GetDatabasePath();
+            if (!File.Exists(databasePath))
+            {
+                MessageBox.Show(
+                    "Data/BOM_Master.db 파일을 찾을 수 없습니다.",
+                    "알림",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+                return;
+            }
+
+            try
+            {
+                LogStart("Match PDB BOM with DB");
+
+                var sourceTable = ReoGridWorksheetAdapter.ToDataTable(worksheet);
+                if (sourceTable.Rows.Count == 0)
+                {
+                    MessageBox.Show(
+                        "매칭 작업을 진행할 BOM 파일이 열려있지 않습니다.",
+                        "알림",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                    LogEnd("Match PDB BOM with DB");
+                    return;
+                }
+
+                LogProgress("Match PDB BOM with DB", $"DB 경로: {databasePath}");
+                Mouse.OverrideCursor = Cursors.Wait;
+
+                var result = PdbBomDbMatcher.Match(
+                    sourceTable,
+                    databasePath,
+                    (current, total) => ReportThrottledRowProgress(
+                        "Match PDB BOM with DB",
+                        current,
+                        total,
+                        "DB 매칭"));
+
+                ReoGridWorksheetAdapter.ApplyDataTable(worksheet, result.OutputTable);
+                PdbBomDbMatchWorksheetStyler.Apply(worksheet, result.Layout);
+
+                LogProgress(
+                    "Match PDB BOM with DB",
+                    $"PDB BOM DB 매칭 완료: 총 {result.TotalProcessed}개 항목 중 {result.MatchedCount}개 매칭 성공, {result.UnmatchedCount}개 미매칭(DB 미등록)");
+                LogEnd("Match PDB BOM with DB");
+            }
+            catch (Exception ex)
+            {
+                LogProgress("Match PDB BOM with DB", $"오류: {ex.Message}");
+                LogEnd("Match PDB BOM with DB");
+                MessageBox.Show(
+                    $"Match PDB BOM with DB 처리 중 오류가 발생했습니다.\n{ex.Message}",
+                    "오류",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+            }
+        }
+
         private void CompareBomMenuItem_Click(object sender, RoutedEventArgs e)
         {
             if (!TryResolveCompareGrids(out var primaryGrid, out var secondaryGrid, out var errorMessage))
